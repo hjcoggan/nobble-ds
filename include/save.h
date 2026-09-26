@@ -6,7 +6,7 @@
 
 typedef struct {
     int32_t best_round;       // furthest round reached
-    int32_t best_score;       // best total score in a run
+    int32_t best_score;       // best single launch
 } SaveData;
 
 extern SaveData save;

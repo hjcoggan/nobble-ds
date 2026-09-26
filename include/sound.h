@@ -15,11 +15,12 @@ void music_play(int song);   // start a song from the top
 void music_stop(void);       // silence, keeping the song position
 void music_resume(void);
 
-enum { SFX_PEG_PLUS, SFX_PEG_MULT, SFX_PEG_COIN };
+enum { SFX_POP, SFX_POP_GONE };
 
-void sfx_peg(int hits, int kind);   // hits: pegs hit so far this drop
-void sfx_bumper(void);
-void sfx_land(int bucket_mult);
+void sfx_peg(int hits, int kind);   // hits: pegs hit so far this launch
+void sfx_spring(void);
+void sfx_wall(void);
+void sfx_launch(void);
 void sfx_move(void);
 void sfx_buy(void);
 void sfx_deny(void);

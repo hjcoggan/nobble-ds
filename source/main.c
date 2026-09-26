@@ -7,17 +7,23 @@
 
 #define MAP_SBB 31
 #define PAUSE_DIM 9               // 0-16 brightness decrease behind menus
-#define RESULT_FRAMES 60
-#define CLEAR_FRAMES 120
+#define RESULT_FRAMES 100
+#define AIM_DOTS 8
 
 // OAM slots
 #define OBJ_NUBBY 0
 #define OBJ_ICON  1               // 4 slots: owned items, or shop wares
-#define OBJ_PEG   5
+#define OBJ_DOT   5               // aim guide
+#define OBJ_PEG   (OBJ_DOT + AIM_DOTS)
+
+// each slot's peg has its own 16x16 sprite with its number drawn on
+#define PEG_TILE(i) (TILE_FREE + (i) * 4)
+
+#define ATTR1_SIZE16 0x4000
 
 typedef enum {
     ST_TITLE, ST_MENU, ST_HOWTO, ST_CREDITS,
-    ST_AIM, ST_FALL, ST_RESULT, ST_CLEAR, ST_SHOP, ST_PAUSE, ST_OVER,
+    ST_AIM, ST_FLY, ST_RESULT, ST_SHOP, ST_PAUSE, ST_OVER,
 } State;
 
 enum { MAIN_PLAY, MAIN_HOWTO, MAIN_CREDITS, MAIN_COUNT };
@@ -26,8 +32,10 @@ enum { PAUSE_RESUME, PAUSE_QUIT, PAUSE_COUNT };
 static uint16_t oam[128 * 4];
 static Game game;
 static State state, paused_from;
-static int frames, timer, menu_sel, aim_x, best_at_start;
+static Result last_result;
+static int frames, timer, menu_sel, aim, best_launch;
 static int credits_scroll, credits_rows;
+static int32_t shown[NUM_SLOTS];  // value currently drawn on each peg sprite
 static uint32_t seed = 0x5EED1234;
 static uint16_t keys, prev_keys;
 
@@ -64,6 +72,7 @@ static void init_video(void)
     REG_BG1CNT = BG_PRIO(0) | BG_CBB(FONT_CBB) | BG_SBB(TEXT_SBB);
 
     for (int i = 0; i < 128; i++) oam[i * 4] = ATTR0_HIDE;
+    for (int i = 0; i < NUM_SLOTS; i++) shown[i] = -1;
     REG_DISPCNT = DCNT_MODE0 | DCNT_BG0 | DCNT_BG1 | DCNT_OBJ | DCNT_OBJ_1D;
 }
 
@@ -72,8 +81,6 @@ static void dim(int on, int level)
     REG_BLDCNT = on ? (BLD_DARKEN | BLD_BG0 | BLD_OBJ) : 0;
     REG_BLDY = level;
 }
-
-#define ATTR1_SIZE16 0x4000
 
 static void set_obj(int n, int x, int y, uint16_t a1size, uint16_t a2)
 {
@@ -89,32 +96,76 @@ static void icon_obj(int n, int item, int x, int y, int prio)
     set_obj(n, x, y, ATTR1_SIZE16, TILE_ICON(item) | ATTR2_PRIO(prio) | ATTR2_PAL(PAL_ICON));
 }
 
-static void peg_obj(int n, int type, int lit, int x, int y, int prio)
+// ---------------------------------------------------------------- numbered pegs
+
+// 3x5 digits (bit 14 = top left), then K for thousands
+static const uint16_t digits3x5[11] = {
+    0x7B6F, 0x2C97, 0x73E7, 0x73CF, 0x5BC9, 0x79CF, 0x79EF, 0x7252, 0x7BEF, 0x7BCF, 0x5D35,
+};
+
+static void peg_pixel(uint32_t *buf, int x, int y, int c)
 {
-    if (type == PEG_BUMPER)
-        set_obj(n, x - 8, y - 8, ATTR1_SIZE16, TILE_BUMPER | ATTR2_PRIO(prio) | ATTR2_PAL(PAL_PEG(type, lit)));
-    else
-        set_obj(n, x - 4, y - 4, ATTR1_SIZE8, TILE_PEG | ATTR2_PRIO(prio) | ATTR2_PAL(PAL_PEG(type, lit)));
+    int word = ((y >> 3) * 2 + (x >> 3)) * 8 + (y & 7);
+    int shift = (x & 7) * 4;
+    buf[word] = (buf[word] & ~(0xFu << shift)) | ((uint32_t)c << shift);
+}
+
+// Redraw slot i's sprite: the disc template with the number on top.
+static void render_peg(int i, int32_t v)
+{
+    uint32_t buf[32];
+    for (int w = 0; w < 32; w++) buf[w] = obj_tiles[TILE_PEG * 8 + w];
+
+    int glyphs[4], n = 0;
+    if (v >= 10000) {                     // 12K, 999K
+        int k = v / 1000;
+        if (k > 999) k = 999;
+        int tmp[3], m = 0;
+        do {
+            tmp[m++] = k % 10;
+            k /= 10;
+        } while (k);
+        while (m) glyphs[n++] = tmp[--m];
+        glyphs[n++] = 10;
+    } else {
+        int tmp[4], m = 0;
+        do {
+            tmp[m++] = v % 10;
+            v /= 10;
+        } while (v);
+        while (m) glyphs[n++] = tmp[--m];
+    }
+    int x0 = (16 - (n * 4 - 1)) / 2;
+    for (int g = 0; g < n; g++) {
+        uint16_t bits = digits3x5[glyphs[g]];
+        for (int r = 0; r < 5; r++)
+            for (int c = 0; c < 3; c++)
+                if (bits & (1 << (14 - r * 3 - c))) peg_pixel(buf, x0 + g * 4 + c, 5 + r, 5);
+    }
+    volatile uint32_t *dst = OBJ_TILES + PEG_TILE(i) * 8;
+    for (int w = 0; w < 32; w++) dst[w] = buf[w];
+}
+
+static int tier(int32_t v)
+{
+    int t = 0;
+    while (v > 1 && t < NUM_TIERS - 1) {
+        v >>= 1;
+        t++;
+    }
+    return t;
 }
 
 static int on_board(void)
 {
-    return state == ST_AIM || state == ST_FALL || state == ST_RESULT || state == ST_CLEAR ||
-           state == ST_PAUSE || state == ST_OVER;
+    return state == ST_AIM || state == ST_FLY || state == ST_RESULT || state == ST_PAUSE ||
+           state == ST_OVER;
 }
 
 static void draw_objects(void)
 {
     for (int i = 0; i < 128; i++) hide_obj(i);
 
-    if (state == ST_HOWTO) {
-        // example pegs next to the rules
-        peg_obj(OBJ_PEG + 0, PEG_PLUS, 0, 36, 60, 0);
-        peg_obj(OBJ_PEG + 1, PEG_MULT, 0, 36, 68, 0);
-        peg_obj(OBJ_PEG + 2, PEG_COIN, 0, 36, 76, 0);
-        peg_obj(OBJ_PEG + 3, PEG_BUMPER, 0, 36, 84, 0);
-        return;
-    }
     if (state == ST_SHOP) {
         for (int s = 0; s < SHOP_SLOTS; s++)
             if (game.shop[s] >= 0) icon_obj(OBJ_ICON + s, game.shop[s], 24, 36 + s * 24, 0);
@@ -122,20 +173,36 @@ static void draw_objects(void)
     }
     if (!on_board()) return;
 
-    // Nubby, hanging at the top while aiming
-    int nx = state == ST_AIM ? aim_x : game.x >> 8;
-    int ny = state == ST_AIM ? DROP_Y : game.y >> 8;
     int blink = (frames % 180) < 8;
-    if (state != ST_OVER || game.dropping)
+    int nx = state == ST_AIM ? LAUNCH_X : game.x >> 8;
+    int ny = state == ST_AIM ? LAUNCH_Y : game.y >> 8;
+    if ((state == ST_AIM || game.flying) && game_has(&game, ITEM_BIG))
+        set_obj(OBJ_NUBBY, nx - 8, ny - 8, ATTR1_SIZE16,
+                (blink ? TILE_NUBBY_BIG_BLINK : TILE_NUBBY_BIG) | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
+    else if (state == ST_AIM || game.flying)
         set_obj(OBJ_NUBBY, nx - 4, ny - 4, ATTR1_SIZE8,
                 (blink ? TILE_NUBBY_BLINK : TILE_NUBBY) | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
 
+    if (state == ST_AIM) {
+        int16_t xs[AIM_DOTS], ys[AIM_DOTS];
+        int n = game_predict(&game, aim, xs, ys, AIM_DOTS);
+        for (int d = 0; d < n; d++)
+            set_obj(OBJ_DOT + d, xs[d] - 4, ys[d] - 4, ATTR1_SIZE8,
+                    TILE_DOT | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
+    }
+
     for (int i = 0; i < game.nitems; i++) icon_obj(OBJ_ICON + i, game.items[i], 212, 44 + i * 20, 1);
 
-    for (int i = 0; i < game.npegs && OBJ_PEG + i < 128; i++) {
-        const Peg *p = &game.pegs[i];
-        int lit = p->type == PEG_BUMPER ? p->flash > 0 : p->lit;
-        peg_obj(OBJ_PEG + i, p->type, lit, p->x, p->y, 1);
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        int32_t v = game.pegs[i];
+        if (!v) continue;
+        if (v != shown[i]) {
+            render_peg(i, v);
+            shown[i] = v;
+        }
+        int pal = game.flash[i] ? PAL_FLASH : PAL_TIER(tier(v));
+        set_obj(OBJ_PEG + i, slots[i].x - 8, slots[i].y - 8, ATTR1_SIZE16,
+                PEG_TILE(i) | ATTR2_PRIO(1) | ATTR2_PAL(pal));
     }
 }
 
@@ -197,26 +264,19 @@ static void draw_hud(void)
     text_at(0, 1, "ROUND");
     num_right(0, 2, game.round, 5);
     text_at(0, 4, "GOAL");
-    num_right(0, 5, game.target, 5);
+    num_right(0, 5, game.quota, 5);
     text_at(0, 7, "SCORE");
-    num_right(0, 8, game.round_score, 5);
-    text_at(0, 10, "DROPS");
-    num_right(0, 11, game.drops_left, 5);
-    text_at(0, 13, "PTS");
-    num_right(0, 14, game.dropping ? game.points : 0, 5);
-    text_at(0, 15, "MULT");
-    text_at(0, 16, "X");
-    num_right(1, 16, game.dropping ? game.mult : 1, 4);
+    num_right(0, 8, game.score, 5);
+    text_at(0, 10, "LIVES");
+    num_right(0, 11, game.lives, 5);
 
     text_at(25, 1, "COINS");
     num_right(25, 2, game.coins, 5);
     text_at(25, 4, "ITEMS");
-
-    for (int b = 0; b < NUM_BUCKETS; b++) {
-        char buf[4] = "X ";
-        buf[1] = '0' + game_bucket_mult(&game, b);
-        text_style(6 + b * 4, 18, buf, TXT_GOLD);
-    }
+    int until = SHOP_EVERY - (game.round - 1) % SHOP_EVERY;
+    text_at(25, 14, "SHOP");
+    text_at(25, 15, "IN");
+    num_right(27, 15, until, 3);
 }
 
 // ---------------------------------------------------------------- saving
@@ -228,8 +288,8 @@ static void record_run(void)
         save.best_round = game.round;
         changed = 1;
     }
-    if (game.total_score > save.best_score) {
-        save.best_score = game.total_score;
+    if (best_launch > save.best_score) {
+        save.best_score = best_launch;
         changed = 1;
     }
     if (changed) save_write();
@@ -246,7 +306,7 @@ static void draw_title_text(void)
     if (save.best_round > 0) {
         char buf[32], *p = put_str(buf, "BEST ROUND ");
         p = put_num(p, save.best_round);
-        p = put_str(p, "  SCORE ");
+        p = put_str(p, "  LAUNCH ");
         put_num(p, save.best_score);
         text_center(17, buf, TXT_GOLD);
     }
@@ -276,8 +336,6 @@ static void go_title(void)
     music_stop();
     REG_BG1VOFS = 0;
     load_bg(title_pal, title_tiles);
-    game.npegs = 0;
-    game.nitems = 0;
     draw_title_text();
     state = ST_TITLE;
     fade(0);
@@ -298,20 +356,19 @@ static void show_howto(void)
 {
     state = ST_HOWTO;
     text_clear();
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0;    // keep the example pegs bright
-    REG_BLDY = 12;
+    dim(1, 12);
     panel(1, 28, 18);
     text_center(2, "HOW TO PLAY", TXT_HILITE);
-    text_style(3, 4, "LEFT RIGHT TO AIM NUBBY", TXT_PANEL);
-    text_style(3, 5, "A TO DROP", TXT_PANEL);
-    text_style(6, 7, "WHITE PEG   +1 POINT", TXT_PANEL);
-    text_style(6, 8, "PURPLE PEG  +1 MULT", TXT_PANEL);
-    text_style(6, 9, "GOLD PEG    +1 COIN", TXT_PANEL);
-    text_style(6, 10, "BUMPER      BOUNCE +1", TXT_PANEL);
-    text_style(3, 12, "DROP SCORE =", TXT_PANEL);
-    text_style(3, 13, "POINTS X MULT X BUCKET", TXT_HILITE);
-    text_style(3, 15, "REACH THE GOAL TO WIN", TXT_PANEL);
-    text_style(3, 16, "COINS BUY ITEMS", TXT_PANEL);
+    text_style(2, 4, "AIM WITH LEFT AND RIGHT,", TXT_PANEL);
+    text_style(2, 5, "A LAUNCHES NUBBY.", TXT_PANEL);
+    text_style(2, 7, "A HIT SCORES THE PEG'S", TXT_PANEL);
+    text_style(2, 8, "NUMBER AND HALVES IT.", TXT_PANEL);
+    text_style(2, 9, "A 1 POPS AND VANISHES.", TXT_PANEL);
+    text_style(2, 11, "REACH THE GOAL IN ONE", TXT_HILITE);
+    text_style(2, 12, "LAUNCH OR LOSE A LIFE.", TXT_HILITE);
+    text_style(2, 14, "BEAT IT BY MORE TO RESTOCK", TXT_PANEL);
+    text_style(2, 15, "AND GROW THE PEGS.", TXT_PANEL);
+    text_style(2, 16, "BOUNCE OFF THE WALLS!", TXT_PANEL);
 }
 
 static const struct { const char *role, *name; } credits[] = {
@@ -382,42 +439,27 @@ static void update_credits(uint16_t pressed)
 
 // ---------------------------------------------------------------- the run
 
-static void start_round(void)
+// Fade to this round's board (the pegs carry over from the last round).
+static void show_board(void)
 {
     fade(1);
     music_stop();
-    game_start_round(&game);
     int board = (game.round - 1) % NUM_BOARDS;
     load_bg(board_pal[board], board_tiles[board]);
     dim(0, 0);
     text_clear();
     draw_hud();
-    aim_x = (BOARD_L + BOARD_R) / 2;
     state = ST_AIM;
     fade(0);
-    music_play(game.round >= 5 ? SONG_OVERTIME : SONG_FACTORY);
+    music_play(game.round >= 7 ? SONG_OVERTIME : SONG_FACTORY);
 }
 
 static void new_run(void)
 {
-    best_at_start = save.best_score;
     game_new_run(&game, seed ^ (uint32_t)frames * 2654435761u);
-    start_round();
-}
-
-static void show_result(void)
-{
-    char buf[32], *p = buf;
-    p = put_num(p, game.points);
-    p = put_str(p, " X ");
-    p = put_num(p, game.mult);
-    p = put_str(p, " X ");
-    put_num(p, game_bucket_mult(&game, game.last_bucket));
-    panel(7, 16, 5);
-    text_center(8, buf, TXT_PANEL);
-    p = put_str(buf, "+");
-    put_num(p, game.last_score);
-    text_center(10, buf, TXT_HILITE);
+    best_launch = 0;
+    aim = 0;
+    show_board();
 }
 
 static void game_over(void)
@@ -428,16 +470,58 @@ static void game_over(void)
     record_run();
     text_clear();
     draw_hud();
-    panel(5, 18, 10);
+    panel(5, 18, 9);
     text_center(6, "GAME OVER", TXT_HILITE);
-    p = put_str(buf, "ROUND ");
+    p = put_str(buf, "REACHED ROUND ");
     put_num(p, game.round);
     text_center(8, buf, TXT_PANEL);
-    p = put_str(buf, "SCORE ");
-    put_num(p, game.total_score);
+    p = put_str(buf, "BEST LAUNCH ");
+    put_num(p, best_launch);
     text_center(9, buf, TXT_PANEL);
-    if (game.total_score > best_at_start) text_center(11, "NEW BEST!", TXT_HILITE);
-    text_center(13, "PRESS START", TXT_PANEL);
+    text_center(11, "PRESS START", TXT_PANEL);
+}
+
+// Called when Nubby falls out: score the launch and show how it went.
+static void finish_launch(void)
+{
+    char buf[32], *p;
+    int score = game.score;
+    int quota = game.quota;
+    last_result = game_resolve(&game);
+    score = game.perfect ? score * 2 : score;
+    if (score > best_launch) best_launch = score;
+
+    if (last_result == RESULT_GAME_OVER) {
+        game_over();
+        return;
+    }
+    text_clear();
+    draw_hud();
+    panel(5, 20, 9);
+    p = put_num(buf, score);
+    p = put_str(p, " OF ");
+    put_num(p, quota);
+    text_center(8, buf, TXT_PANEL);
+    if (last_result == RESULT_CLEARED) {
+        sfx_clear();
+        text_center(6, game.perfect ? "PERFECT! X2" : "QUOTA MET!", TXT_HILITE);
+        p = put_num(buf, game.restocks);
+        put_str(p, game.restocks == 1 ? " RESTOCK" : " RESTOCKS");
+        text_center(10, buf, TXT_PANEL);
+        p = put_str(buf, "+");
+        p = put_num(p, game.restocks * (game_has(&game, ITEM_RICH) ? 2 : 1));
+        put_str(p, " COINS");
+        text_center(11, buf, TXT_GOLD);
+    } else {
+        sfx_deny();
+        text_center(6, "MISSED!", TXT_HILITE);
+        p = put_num(buf, game.lives);
+        put_str(p, game.lives == 1 ? " LIFE LEFT" : " LIVES LEFT");
+        text_center(10, buf, TXT_PANEL);
+        text_center(11, "THE BOARD RESETS", TXT_PANEL);
+    }
+    state = ST_RESULT;
+    timer = RESULT_FRAMES;
 }
 
 // ---------------------------------------------------------------- shop
@@ -460,7 +544,7 @@ static void draw_shop(void)
             continue;
         }
         int item = game.shop[s];
-        text_style(6, row, "              ", TXT_PANEL);
+        text_style(6, row, "                      ", TXT_PANEL);
         if (item < 0) {
             text_style(6, row, "SOLD", TXT_PANEL);
             continue;
@@ -468,10 +552,8 @@ static void draw_shop(void)
         text_style(6, row, item_info[item].name, style);
         p = put_num(buf, item_info[item].price);
         put_str(p, " COINS");
-        text_style(17, row, "         ", TXT_PANEL);
-        text_style(17, row, buf, game.coins >= item_info[item].price ? TXT_PANEL : TXT_PLAIN);
+        text_style(18, row, buf, game.coins >= item_info[item].price ? TXT_PANEL : TXT_PLAIN);
     }
-    // description of the highlighted item
     text_style(2, 16, "                        ", TXT_PANEL);
     text_style(2, 17, "                        ", TXT_PANEL);
     if (menu_sel < SHOP_SLOTS && game.shop[menu_sel] >= 0) {
@@ -491,12 +573,9 @@ static void open_shop(void)
     state = ST_SHOP;
     menu_sel = 0;
     text_clear();
-    dim(0, 0);
     draw_shop();
-    // the shop sits over a darkened board
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0;
+    REG_BLDCNT = BLD_DARKEN | BLD_BG0;    // the shop sits over a darkened board
     REG_BLDY = 12;
-    for (int i = 0; i <= 16; i += 2) frame();
     music_play(SONG_SHOP);
 }
 
@@ -505,92 +584,69 @@ static void update_shop(uint16_t pressed)
     if (menu_move(pressed, SHOP_SLOTS + 1)) draw_shop();
     if (!(pressed & KEY_A)) return;
     if (menu_sel == SHOP_SLOTS) {
-        start_round();
+        show_board();
         return;
     }
-    if (game_buy(&game, menu_sel)) {
-        sfx_buy();
-    } else {
-        sfx_deny();
-    }
+    if (game_buy(&game, menu_sel)) sfx_buy();
+    else sfx_deny();
     draw_shop();
 }
 
 // ---------------------------------------------------------------- play
 
+static void pause_game(void)
+{
+    paused_from = state;
+    state = ST_PAUSE;
+    menu_sel = PAUSE_RESUME;
+    music_stop();
+    dim(1, PAUSE_DIM);
+    draw_pause_menu();
+}
+
 static void update_aim(uint16_t pressed)
 {
     if (pressed & KEY_START) {
-        paused_from = state;
-        state = ST_PAUSE;
-        menu_sel = PAUSE_RESUME;
-        music_stop();
-        dim(1, PAUSE_DIM);
-        draw_pause_menu();
+        pause_game();
         return;
     }
-    if (keys & KEY_LEFT) aim_x -= 2;
-    if (keys & KEY_RIGHT) aim_x += 2;
-    if (keys & KEY_L) aim_x -= 1;         // shoulders for fine adjustment
-    if (keys & KEY_R) aim_x += 1;
-    if (aim_x < BOARD_L + NUBBY_R + 1) aim_x = BOARD_L + NUBBY_R + 1;
-    if (aim_x > BOARD_R - NUBBY_R - 1) aim_x = BOARD_R - NUBBY_R - 1;
+    if (keys & KEY_LEFT) aim--;           // negative angles aim left
+    if (keys & KEY_RIGHT) aim++;
+    if (pressed & KEY_L) aim--;           // shoulders nudge one step for fine aim
+    if (pressed & KEY_R) aim++;
+    if (aim > AIM_MAX) aim = AIM_MAX;
+    if (aim < -AIM_MAX) aim = -AIM_MAX;
     if (pressed & KEY_A) {
-        game_drop(&game, aim_x);
-        state = ST_FALL;
+        game_launch(&game, aim);
+        sfx_launch();
+        state = ST_FLY;
     }
 }
 
-static void update_fall(uint16_t pressed)
+static void update_fly(uint16_t pressed)
 {
     if (pressed & KEY_START) {
-        paused_from = state;
-        state = ST_PAUSE;
-        menu_sel = PAUSE_RESUME;
-        music_stop();
-        dim(1, PAUSE_DIM);
-        draw_pause_menu();
+        pause_game();
         return;
     }
     Events ev;
-    int landed = game_step(&game, &ev);
-    if (ev.bumper) sfx_bumper();
-    else if (ev.coin) sfx_peg(ev.hits, SFX_PEG_COIN);
-    else if (ev.mult) sfx_peg(ev.hits, SFX_PEG_MULT);
-    else if (ev.plus) sfx_peg(ev.hits, SFX_PEG_PLUS);
+    int out = game_step(&game, &ev);
+    if (ev.spring) sfx_spring();
+    else if (ev.pop) sfx_peg(ev.hits, ev.gone ? SFX_POP_GONE : SFX_POP);
+    else if (ev.wall) sfx_wall();
     draw_hud();
-    if (landed) {
-        sfx_land(game_bucket_mult(&game, game.last_bucket));
-        draw_hud();
-        show_result();
-        state = ST_RESULT;
-        timer = RESULT_FRAMES;
-    }
+    if (out) finish_launch();
 }
 
 static void update_result(void)
 {
     if (--timer > 0) return;
-    text_clear();
-    draw_hud();
-    RoundState rs = game_round_state(&game);
-    if (rs == ROUND_CLEARED) {
-        char buf[32], *p;
-        int earned = game_finish_round(&game);
-        record_run();
-        sfx_clear();
-        draw_hud();
-        panel(6, 18, 6);
-        text_center(7, "ROUND CLEAR!", TXT_HILITE);
-        p = put_str(buf, "+");
-        p = put_num(p, earned);
-        put_str(p, " COINS");
-        text_center(9, buf, TXT_PANEL);
-        state = ST_CLEAR;
-        timer = CLEAR_FRAMES;
-    } else if (rs == ROUND_FAILED) {
-        game_over();
+    if (last_result == RESULT_CLEARED) {
+        if (game_shop_due(&game)) open_shop();
+        else show_board();
     } else {
+        text_clear();
+        draw_hud();
         state = ST_AIM;
     }
 }
@@ -670,14 +726,11 @@ int main(void)
         case ST_AIM:
             update_aim(pressed);
             break;
-        case ST_FALL:
-            update_fall(pressed);
+        case ST_FLY:
+            update_fly(pressed);
             break;
         case ST_RESULT:
             update_result();
-            break;
-        case ST_CLEAR:
-            if (--timer <= 0) open_shop();
             break;
         case ST_SHOP:
             update_shop(pressed);

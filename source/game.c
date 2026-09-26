@@ -1,25 +1,54 @@
 #include "game.h"
 
 #define FIX(n) ((n) << 8)
-#define GRAVITY 22                 // 8.8 px/frame^2
+#define GRAVITY 12                 // 8.8 px/frame^2
+#define FLOATY_GRAVITY 7
+#define LAUNCH_SPEED (3 * 256)     // 8.8 px/frame
 #define MAX_SPEED FIX(5)
 #define SUBSTEPS 2
-#define PEG_BOUNCE 140             // restitution, 8.8
-#define WALL_BOUNCE 150
-#define BUMPER_KICK FIX(3)         // minimum speed away from a bumper
-#define BUMPER_COOLDOWN 8
-#define MAX_BUMPS 8                // after this many kicks in a drop, bumpers go quiet
+#define PEG_BOUNCE 230             // restitution off pegs, 8.8
+#define WALL_BOUNCE 230
+#define PEG_COOLDOWN 6
+#define FLASH_FRAMES 8
+
+// 6 rows alternating 4 and 3 pegs
+const Slot slots[NUM_SLOTS] = {
+    { 66, 42 }, { 102, 42 }, { 138, 42 }, { 174, 42 },
+    { 84, 60 }, { 120, 60 }, { 156, 60 },
+    { 66, 78 }, { 102, 78 }, { 138, 78 }, { 174, 78 },
+    { 84, 96 }, { 120, 96 }, { 156, 96 },
+    { 66, 114 }, { 102, 114 }, { 138, 114 }, { 174, 114 },
+    { 84, 132 }, { 120, 132 }, { 156, 132 },
+};
 
 const ItemInfo item_info[NUM_ITEMS] = {
-    [ITEM_HEAVY]  = { "HEAVY",  "WHITE PEGS WORTH 2",     6 },
-    [ITEM_MULTI]  = { "MULTI",  "2 MORE PURPLE PEGS",     6 },
-    [ITEM_EXTRA]  = { "EXTRA",  "1 MORE DROP EACH ROUND", 7 },
-    [ITEM_SPRING] = { "SPRING", "MORE BUMPERS, WORTH 3",  5 },
-    [ITEM_LUCKY]  = { "LUCKY",  "EVERY 7TH PEG GIVES +7", 5 },
-    [ITEM_PIGGY]  = { "PIGGY",  "1 COIN PER 4 SAVED",     4 },
-    [ITEM_BOOST]  = { "BOOST",  "EACH DROP STARTS AT 5",  5 },
-    [ITEM_BUCKET] = { "BUCKET", "MIDDLE BUCKET X5",       6 },
+    [ITEM_SPRINGS] = { "SPRINGS", "FLOOR BOUNCES NUBBY ONCE", 6 },
+    [ITEM_WALLS]   = { "WALLS",   "WALL BOUNCES SCORE +3",    4 },
+    [ITEM_PUMP]    = { "PUMP",    "LOWEST PEG X2 EACH ROUND", 5 },
+    [ITEM_BIG]     = { "BIG",     "NUBBY IS BIGGER",          6 },
+    [ITEM_FIRST]   = { "FIRST",   "FIRST HIT SCORES X3",      5 },
+    [ITEM_FLOATY]  = { "FLOATY",  "LOWER GRAVITY",            5 },
+    [ITEM_HEART]   = { "HEART",   "+1 LIFE AND MAX LIVES",    7 },
+    [ITEM_RICH]    = { "RICH",    "+1 COIN PER RESTOCK",      4 },
 };
+
+// sin for angles 0..64 (a quarter turn), 8.8
+static const int16_t quarter_sin[65] = {
+    0, 6, 13, 19, 25, 31, 38, 44, 50, 56, 62, 68, 74, 80, 86, 92,
+    98, 104, 109, 115, 121, 126, 132, 137, 142, 147, 152, 157, 162, 167, 172, 177,
+    181, 185, 190, 194, 198, 202, 206, 209, 213, 216, 220, 223, 226, 229, 231, 234,
+    237, 239, 241, 243, 245, 247, 248, 250, 251, 252, 253, 254, 255, 255, 256, 256, 256,
+};
+
+static int isin(int a)
+{
+    a &= 255;
+    if (a <= 64) return quarter_sin[a];
+    if (a <= 128) return quarter_sin[128 - a];
+    if (a <= 192) return -quarter_sin[a - 128];
+    return -quarter_sin[256 - a];
+}
+static int icos(int a) { return isin(a + 64); }
 
 uint32_t game_rand(Game *g)
 {
@@ -39,101 +68,54 @@ int game_has(const Game *g, int item)
     return 0;
 }
 
-int game_bucket_mult(const Game *g, int slot)
+int game_radius(const Game *g) { return game_has(g, ITEM_BIG) ? BIG_NUBBY_R : NUBBY_R; }
+
+int game_potential(const Game *g)
 {
-    static const int mults[NUM_BUCKETS] = { 2, 1, 3, 1, 2 };
-    if (slot == NUM_BUCKETS / 2 && game_has(g, ITEM_BUCKET)) return 5;
-    return mults[slot];
+    int total = 0;
+    for (int i = 0; i < NUM_SLOTS; i++)
+        if (g->pegs[i]) total += g->pegs[i] * 2 - 1;     // 8 pays 8+4+2+1
+    return total;
 }
 
-int game_target(int round)
+// The quota is a share of everything on the board, rising each round.
+static int quota_for(const Game *g)
 {
-    int t = 90;
-    for (int r = 1; r < round; r++) t = (t * 7 / 5 + 5) / 10 * 10;   // +40% a round
-    return t;
+    int pct = 15 + (g->round - 1) * 3;
+    if (pct > 70) pct = 70;
+    int q = game_potential(g) * pct / 100;
+    return q < 5 ? 5 : q;
+}
+
+static void begin_round(Game *g)
+{
+    if (game_has(g, ITEM_PUMP)) {
+        int low = -1;
+        for (int i = 0; i < NUM_SLOTS; i++)
+            if (g->pegs[i] && (low < 0 || g->pegs[i] < g->pegs[low])) low = i;
+        if (low >= 0) g->pegs[low] *= 2;
+    }
+    for (int i = 0; i < NUM_SLOTS; i++) g->round_start[i] = g->pegs[i];
+    g->quota = quota_for(g);
+    g->score = 0;
 }
 
 void game_new_run(Game *g, uint32_t seed)
 {
     g->rng = seed ? seed : 0x2468ACE;
-    g->round = 0;
-    g->total_score = 0;
+    g->round = 1;
+    g->lives = g->max_lives = START_LIVES;
     g->coins = 0;
     g->nitems = 0;
-    g->dropping = 0;
-}
-
-// ---------------------------------------------------------------- board
-
-static void remove_peg(Game *g, int i)
-{
-    g->pegs[i] = g->pegs[--g->npegs];
-}
-
-static int pick_plus_peg(Game *g)
-{
-    for (int tries = 0; tries < 200; tries++) {
-        int i = rand_below(g, g->npegs);
-        if (g->pegs[i].type == PEG_PLUS) return i;
+    g->flying = 0;
+    g->restocks = g->perfect = 0;
+    // a starter board: mostly 1s and 2s with a couple of 4s
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        int r = rand_below(g, 100);
+        g->pegs[i] = r < 30 ? 0 : r < 70 ? 1 : r < 92 ? 2 : 4;
+        g->cooldown[i] = g->flash[i] = 0;
     }
-    return -1;
-}
-
-static void make_board(Game *g)
-{
-    g->npegs = 0;
-    for (int row = 0; row < 8; row++) {
-        int y = 34 + row * 13;
-        int odd = row & 1;
-        for (int k = 0; k < (odd ? 8 : 9); k++) {
-            if (g->npegs >= MAX_PEGS) break;
-            if (rand_below(g, 100) < 14) continue;     // gaps keep boards varied
-            Peg *p = &g->pegs[g->npegs++];
-            p->x = (odd ? 60 : 52) + k * 16;
-            p->y = y;
-            p->type = PEG_PLUS;
-            p->lit = p->flash = 0;
-        }
-    }
-
-    // bumpers replace a peg and clear the pegs around them
-    int bumpers = 2 + (game_has(g, ITEM_SPRING) ? 2 : 0);
-    for (int b = 0; b < bumpers; b++) {
-        int i = pick_plus_peg(g);
-        if (i < 0 || g->pegs[i].y < 47 || g->pegs[i].y > 112) {
-            b--;
-            if (i < 0) break;
-            continue;
-        }
-        Peg bp = g->pegs[i];
-        bp.type = PEG_BUMPER;
-        for (int j = g->npegs - 1; j >= 0; j--) {
-            int dx = g->pegs[j].x - bp.x, dy = g->pegs[j].y - bp.y;
-            if (dx * dx + dy * dy < 20 * 20) remove_peg(g, j);   // leave room for Nubby
-        }
-        g->pegs[g->npegs++] = bp;
-    }
-
-    int mults = 3 + (game_has(g, ITEM_MULTI) ? 2 : 0);
-    for (int m = 0; m < mults; m++) {
-        int i = pick_plus_peg(g);
-        if (i >= 0) g->pegs[i].type = PEG_MULT;
-    }
-    for (int c = 0; c < 4; c++) {
-        int i = pick_plus_peg(g);
-        if (i >= 0) g->pegs[i].type = PEG_COIN;
-    }
-}
-
-void game_start_round(Game *g)
-{
-    g->round++;
-    g->target = game_target(g->round);
-    g->round_score = 0;
-    g->drops_left = BASE_DROPS + (game_has(g, ITEM_EXTRA) ? 1 : 0);
-    g->dropping = 0;
-    g->last_score = 0;
-    make_board(g);
+    begin_round(g);
 }
 
 // ---------------------------------------------------------------- physics
@@ -154,72 +136,29 @@ static int32_t isqrt(uint32_t n)
     return (int32_t)r;
 }
 
-void game_drop(Game *g, int x)
+void game_launch(Game *g, int angle)
 {
-    if (x < BOARD_L + NUBBY_R + 1) x = BOARD_L + NUBBY_R + 1;
-    if (x > BOARD_R - NUBBY_R - 1) x = BOARD_R - NUBBY_R - 1;
-    for (int i = 0; i < g->npegs; i++) g->pegs[i].lit = g->pegs[i].flash = 0;
-    g->x = FIX(x);
-    g->y = FIX(DROP_Y);
-    g->vx = rand_below(g, 33) - 16;           // a whisker of sideways drift
-    g->vy = 0;
-    g->points = game_has(g, ITEM_BOOST) ? 5 : 0;
-    g->mult = 1;
-    g->hits = 0;
-    g->frames = 0;
-    g->slot = -1;
-    g->still = 0;
-    g->bumps = 0;
-    g->drops_left--;
-    g->dropping = 1;
+    if (angle > AIM_MAX) angle = AIM_MAX;
+    if (angle < -AIM_MAX) angle = -AIM_MAX;
+    g->x = FIX(LAUNCH_X);
+    g->y = FIX(LAUNCH_Y);
+    g->vx = isin(angle) * LAUNCH_SPEED / 256;
+    g->vy = icos(angle) * LAUNCH_SPEED / 256;
+    g->score = g->hits = g->frames = g->still = g->spring_used = 0;
+    g->flying = 1;
 }
 
-static void score_peg(Game *g, Peg *p, Events *ev)
-{
-    if (p->type == PEG_BUMPER) {
-        if (p->flash || g->bumps >= MAX_BUMPS) return;
-        p->flash = BUMPER_COOLDOWN;
-        g->bumps++;
-        g->points += game_has(g, ITEM_SPRING) ? 3 : 1;
-        ev->bumper = 1;
-        return;
-    }
-    if (p->lit) return;
-    p->lit = 1;
-    p->flash = 6;
-    g->hits++;
-    switch (p->type) {
-    case PEG_PLUS:
-        g->points += game_has(g, ITEM_HEAVY) ? 2 : 1;
-        ev->plus = 1;
-        break;
-    case PEG_MULT:
-        g->mult++;
-        ev->mult = 1;
-        break;
-    case PEG_COIN:
-        g->points++;
-        g->coins++;
-        ev->coin = 1;
-        break;
-    }
-    if (game_has(g, ITEM_LUCKY) && g->hits % 7 == 0) {
-        g->points += 7;
-        ev->lucky = 1;
-    }
-}
-
-// Bounce Nubby off a circle at (cx, cy) pixels with radius r. Returns 1 on contact.
-static int collide_circle(Game *g, int cx, int cy, int r, int bumper)
+// Bounce Nubby off a peg at (cx, cy). Returns 1 on contact.
+static int collide(Game *g, int nr, int cx, int cy)
 {
     int32_t dx = g->x - FIX(cx), dy = g->y - FIX(cy);
-    int32_t reach = FIX(NUBBY_R + r);
+    int32_t reach = FIX(nr + PEG_R);
     if (dx >= reach || dx <= -reach || dy >= reach || dy <= -reach) return 0;
     uint32_t d2 = (uint32_t)(dx * dx + dy * dy);
     if (d2 >= (uint32_t)reach * (uint32_t)reach) return 0;
-    int32_t d = isqrt(d2);                      // 8.8
+    int32_t d = isqrt(d2);
     int32_t nx, ny;
-    if (d < 16) {                               // dead centre: push straight up
+    if (d < 16) {
         nx = 0;
         ny = -256;
         d = 0;
@@ -227,79 +166,104 @@ static int collide_circle(Game *g, int cx, int cy, int r, int bumper)
         nx = dx * 256 / d;
         ny = dy * 256 / d;
     }
-    // push out of the peg
     g->x += nx * (reach - d) / 256;
     g->y += ny * (reach - d) / 256;
     int32_t vn = (g->vx * nx + g->vy * ny) / 256;
-    if (bumper) {
-        int32_t out = vn < 0 ? -vn : 0;
-        if (out < BUMPER_KICK) out = BUMPER_KICK;
-        g->vx += nx * (out - vn) / 256;
-        g->vy += ny * (out - vn) / 256;
-    } else if (vn < 0) {
+    if (vn < 0) {
         int32_t j = vn * (256 + PEG_BOUNCE) / 256;
         g->vx -= nx * j / 256;
         g->vy -= ny * j / 256;
-        // tiny random nudge so Nubby never balances on top of a peg
-        g->vx += rand_below(g, 17) - 8;
+        g->vx += rand_below(g, 17) - 8;     // never balance on a peg
     }
     return 1;
 }
 
+static void pop(Game *g, int i, Events *ev)
+{
+    int v = g->pegs[i];
+    int pts = v;
+    if (g->hits == 0 && game_has(g, ITEM_FIRST)) pts *= 3;
+    g->score += pts;
+    g->hits++;
+    g->pegs[i] = v / 2;              // a 1 disappears
+    g->cooldown[i] = PEG_COOLDOWN;
+    g->flash[i] = FLASH_FRAMES;
+    ev->pop = 1;
+    ev->gone = g->pegs[i] == 0;
+    ev->value = pts;
+}
+
+// Walls and ceiling; returns 1 if Nubby bounced off a side wall.
+static int walls(int32_t *x, int32_t *y, int32_t *vx, int32_t *vy, int r)
+{
+    int hit = 0;
+    if (*x < FIX(BOARD_L + r)) {
+        *x = FIX(BOARD_L + r);
+        if (*vx < 0) {
+            *vx = -*vx * WALL_BOUNCE / 256;
+            hit = 1;
+        }
+    }
+    if (*x > FIX(BOARD_R - r)) {
+        *x = FIX(BOARD_R - r);
+        if (*vx > 0) {
+            *vx = -*vx * WALL_BOUNCE / 256;
+            hit = 1;
+        }
+    }
+    if (*y < FIX(CEILING_Y + r)) {
+        *y = FIX(CEILING_Y + r);
+        if (*vy < 0) *vy = -*vy * WALL_BOUNCE / 256;
+    }
+    return hit;
+}
+
+static void clamp_speed(int32_t *vx, int32_t *vy)
+{
+    if (*vx > MAX_SPEED) *vx = MAX_SPEED;
+    if (*vx < -MAX_SPEED) *vx = -MAX_SPEED;
+    if (*vy > MAX_SPEED) *vy = MAX_SPEED;
+    if (*vy < -MAX_SPEED) *vy = -MAX_SPEED;
+}
+
 static void substep(Game *g, Events *ev)
 {
-    g->vy += GRAVITY / SUBSTEPS;
-    if (g->vx > MAX_SPEED) g->vx = MAX_SPEED;
-    if (g->vx < -MAX_SPEED) g->vx = -MAX_SPEED;
-    if (g->vy > MAX_SPEED) g->vy = MAX_SPEED;
-    if (g->vy < -MAX_SPEED) g->vy = -MAX_SPEED;
+    int r = game_radius(g);
+    g->vy += (game_has(g, ITEM_FLOATY) ? FLOATY_GRAVITY : GRAVITY) / SUBSTEPS;
+    clamp_speed(&g->vx, &g->vy);
     g->x += g->vx / SUBSTEPS;
     g->y += g->vy / SUBSTEPS;
 
-    // side walls, or the walls of the bucket Nubby fell into
-    int left = BOARD_L, right = BOARD_R;
-    if (g->slot >= 0) {
-        left = BOARD_L + g->slot * BUCKET_W + 1;
-        right = left + BUCKET_W - 2;
-    }
-    if (g->x < FIX(left + NUBBY_R)) {
-        g->x = FIX(left + NUBBY_R);
-        if (g->vx < 0) g->vx = -g->vx * WALL_BOUNCE / 256;
-    }
-    if (g->x > FIX(right - NUBBY_R)) {
-        g->x = FIX(right - NUBBY_R);
-        if (g->vx > 0) g->vx = -g->vx * WALL_BOUNCE / 256;
+    if (walls(&g->x, &g->y, &g->vx, &g->vy, r)) {
+        if (game_has(g, ITEM_WALLS)) g->score += 3;
+        ev->wall = 1;
     }
 
-    if (g->y < FIX(CEILING_Y + NUBBY_R)) {
-        g->y = FIX(CEILING_Y + NUBBY_R);
-        if (g->vy < 0) g->vy = -g->vy * WALL_BOUNCE / 256;
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        if (g->pegs[i] && collide(g, r, slots[i].x, slots[i].y) && !g->cooldown[i]) pop(g, i, ev);
     }
 
-    for (int i = 0; i < g->npegs; i++) {
-        Peg *p = &g->pegs[i];
-        int bumper = p->type == PEG_BUMPER;
-        int kick = bumper && !p->flash && g->bumps < MAX_BUMPS;
-        if (collide_circle(g, p->x, p->y, bumper ? BUMPER_R : PEG_R, kick)) score_peg(g, p, ev);
-    }
-    // tops of the bucket dividers
-    for (int k = 1; k < NUM_BUCKETS; k++) collide_circle(g, BOARD_L + k * BUCKET_W, BUCKET_Y, 1, 0);
-
-    if (g->slot < 0 && g->y >= FIX(BUCKET_Y)) {
-        int s = ((g->x >> 8) - BOARD_L) / BUCKET_W;
-        g->slot = s < 0 ? 0 : s >= NUM_BUCKETS ? NUM_BUCKETS - 1 : s;
+    if (!g->spring_used && game_has(g, ITEM_SPRINGS) && g->y > FIX(FLOOR_Y) && g->vy > 0) {
+        g->vy = -g->vy - FIX(1);
+        if (g->vy < -MAX_SPEED) g->vy = -MAX_SPEED;
+        g->spring_used = 1;
+        ev->spring = 1;
     }
 }
 
 int game_step(Game *g, Events *ev)
 {
-    ev->plus = ev->mult = ev->coin = ev->bumper = ev->lucky = ev->landed = 0;
-    for (int i = 0; i < g->npegs; i++)
-        if (g->pegs[i].flash) g->pegs[i].flash--;
-    if (!g->dropping) return 0;
+    ev->pop = ev->gone = ev->wall = ev->spring = 0;
+    ev->value = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        if (g->cooldown[i]) g->cooldown[i]--;
+        if (g->flash[i]) g->flash[i]--;
+    }
+    if (!g->flying) return 0;
 
     for (int s = 0; s < SUBSTEPS; s++) substep(g, ev);
     g->frames++;
+    ev->hits = g->hits;
 
     // if Nubby comes to rest on something, give it a shove
     int slow = g->vx < 40 && g->vx > -40 && g->vy < 40 && g->vy > -40;
@@ -309,40 +273,52 @@ int game_step(Game *g, Events *ev)
         g->vy = -FIX(1);
         g->still = 0;
     }
-    ev->hits = g->hits;
 
-    int stuck = g->frames > DROP_TIMEOUT;
-    if (g->y >= FIX(FLOOR_Y) || stuck) {
-        if (g->slot < 0) {
-            int s = ((g->x >> 8) - BOARD_L) / BUCKET_W;
-            g->slot = s < 0 ? 0 : s >= NUM_BUCKETS ? NUM_BUCKETS - 1 : s;
-        }
-        g->last_bucket = g->slot;
-        g->last_score = g->points * g->mult * game_bucket_mult(g, g->slot);
-        g->round_score += g->last_score;
-        g->total_score += g->last_score;
-        g->dropping = 0;
-        ev->landed = 1;
+    if (g->y > FIX(EXIT_Y) || g->frames > LAUNCH_TIMEOUT) {
+        g->flying = 0;
         return 1;
     }
     return 0;
 }
 
-RoundState game_round_state(const Game *g)
+// ---------------------------------------------------------------- rounds
+
+// A restock fills every empty slot with a new peg worth 2^(round/4), and
+// any peg already showing that value swallows a copy of it and doubles.
+static void restock(Game *g)
 {
-    if (g->dropping) return ROUND_PLAYING;
-    if (g->round_score >= g->target) return ROUND_CLEARED;
-    if (g->drops_left <= 0) return ROUND_FAILED;
-    return ROUND_PLAYING;
+    int32_t v = 1 << (g->round / 4);
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        if (g->pegs[i] == v) g->pegs[i] *= 2;
+        else if (!g->pegs[i]) g->pegs[i] = v;
+    }
+    g->coins += 1 + (game_has(g, ITEM_RICH) ? 1 : 0);
 }
 
-int game_finish_round(Game *g)
+Result game_resolve(Game *g)
 {
-    int earned = 3 + g->drops_left;
-    if (game_has(g, ITEM_PIGGY)) earned += (g->coins + earned) / 4;
-    g->coins += earned;
-    return earned;
+    int left = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) left += g->pegs[i] != 0;
+    g->perfect = left == 0;
+    if (g->perfect) g->score *= 2;           // popped every peg
+
+    if (g->score >= g->quota) {
+        g->restocks = g->score / g->quota;
+        if (g->restocks > MAX_RESTOCKS) g->restocks = MAX_RESTOCKS;
+        for (int k = 0; k < g->restocks; k++) restock(g);
+        if (g->lives < g->max_lives) g->lives++;
+        g->round++;
+        begin_round(g);
+        return RESULT_CLEARED;
+    }
+
+    g->restocks = 0;
+    g->lives--;
+    for (int i = 0; i < NUM_SLOTS; i++) g->pegs[i] = g->round_start[i];
+    return g->lives > 0 ? RESULT_RETRY : RESULT_GAME_OVER;
 }
+
+int game_shop_due(const Game *g) { return g->round > 1 && (g->round - 1) % SHOP_EVERY == 0; }
 
 // ---------------------------------------------------------------- shop
 
@@ -369,5 +345,42 @@ int game_buy(Game *g, int slot)
     g->coins -= item_info[item].price;
     g->items[g->nitems++] = (uint8_t)item;
     g->shop[slot] = -1;
+    if (item == ITEM_HEART) {
+        g->max_lives++;
+        g->lives++;
+    }
     return 1;
+}
+
+// ---------------------------------------------------------------- aim guide
+
+int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
+{
+    int r = game_radius(g);
+    int grav = game_has(g, ITEM_FLOATY) ? FLOATY_GRAVITY : GRAVITY;
+    int32_t x = FIX(LAUNCH_X), y = FIX(LAUNCH_Y);
+    int32_t vx = isin(angle) * LAUNCH_SPEED / 256, vy = icos(angle) * LAUNCH_SPEED / 256;
+    int32_t reach = FIX(r + PEG_R);
+    int count = 0;
+    for (int f = 1; f <= 60 && count < n; f++) {
+        for (int s = 0; s < SUBSTEPS; s++) {
+            vy += grav / SUBSTEPS;
+            clamp_speed(&vx, &vy);
+            x += vx / SUBSTEPS;
+            y += vy / SUBSTEPS;
+            walls(&x, &y, &vx, &vy, r);
+            for (int i = 0; i < NUM_SLOTS; i++) {
+                int32_t dx = x - FIX(slots[i].x), dy = y - FIX(slots[i].y);
+                if (g->pegs[i] && dx < reach && dx > -reach && dy < reach && dy > -reach &&
+                    (uint32_t)(dx * dx + dy * dy) < (uint32_t)reach * (uint32_t)reach)
+                    return count;                  // stop at the first peg
+            }
+        }
+        if (f % 4 == 0) {
+            xs[count] = x >> 8;
+            ys[count] = y >> 8;
+            count++;
+        }
+    }
+    return count;
 }

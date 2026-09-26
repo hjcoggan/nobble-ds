@@ -14,20 +14,25 @@
 // sprite tiles and palette banks
 #define TILE_NUBBY 0
 #define TILE_NUBBY_BLINK 1
-#define TILE_PEG 2
-#define TILE_BUMPER 3
-#define TILE_ICON(i) (7 + (i) * 4)
+#define TILE_NUBBY_BIG 2
+#define TILE_NUBBY_BIG_BLINK 6
+#define TILE_PEG 10           // 16x16 disc template (4 tiles)
+#define TILE_DOT 14
+#define TILE_ICON(i) (15 + (i) * 4)
+#define TILE_FREE 47        // first unused sprite tile
 #define PAL_NUBBY 0
-#define PAL_PEG(type, lit) (1 + (type) * 2 + (lit))   // type: plus, mult, coin, bumper
-#define PAL_ICON 9
+#define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
+#define NUM_TIERS 9
+#define PAL_FLASH 10
+#define PAL_ICON 11
 
 extern const uint16_t font_pal[16];
-extern const uint16_t obj_pal[160];
+extern const uint16_t obj_pal[192];
 extern const uint16_t title_pal[256];
 extern const uint32_t title_tiles[BG_IMG_WORDS];
 extern const uint16_t *const board_pal[NUM_BOARDS];
 extern const uint32_t *const board_tiles[NUM_BOARDS];
-extern const uint32_t obj_tiles[312];
+extern const uint32_t obj_tiles[376];
 extern const uint32_t font_tiles[1536];
 
 #endif

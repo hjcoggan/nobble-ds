@@ -311,7 +311,7 @@ static void sfx_start(const uint8_t *seq)
     sfx_timer = 0;
 }
 
-// Each peg in a drop plays the next note up a pentatonic scale.
+// Each peg hit in a launch plays the next note up a pentatonic scale.
 void sfx_peg(int hits, int kind)
 {
     static const uint8_t scale[] = { 72, 74, 76, 79, 81, 84, 86, 88, 91, 93, 96, 98, 100, 103 };
@@ -320,17 +320,18 @@ void sfx_peg(int hits, int kind)
     if (n >= (int)sizeof(scale)) n = sizeof(scale) - 1;
     sfx_seq = 0;
     SND1_SWEEP = 0x0008;
-    SND1_CNT = DUTY(kind == SFX_PEG_MULT ? 1 : 2) | ENV(kind == SFX_PEG_PLUS ? 9 : 12, 1, 0);
+    SND1_CNT = DUTY(2) | ENV(10, 1, 0);
     SND1_FREQ = RESTART | square_rate[scale[n]];
-    if (kind == SFX_PEG_COIN) {
+    if (kind == SFX_POP_GONE) {
+        // a peg that vanishes gets a little sparkle on top
         static uint8_t seq[] = { 0, 3, 0, 4, 0 };
         seq[0] = scale[n];
-        seq[2] = scale[n] + 7 > 107 ? 107 : scale[n] + 7;
+        seq[2] = scale[n] + 12 > 107 ? 107 : scale[n] + 12;
         sfx_start(seq);
     }
 }
 
-void sfx_bumper(void)
+void sfx_spring(void)
 {
     sfx_seq = 0;
     SND1_SWEEP = (1 << 4) | 3;          // quick upward sweep: boing
@@ -338,17 +339,19 @@ void sfx_bumper(void)
     SND1_FREQ = RESTART | square_rate[60];
 }
 
-void sfx_land(int bucket_mult)
+void sfx_wall(void)
 {
-    // a chord that climbs higher for bigger buckets
-    static uint8_t seq[9];
-    int base = 64 + bucket_mult * 2;
-    seq[0] = base;      seq[1] = 3;
-    seq[2] = base + 4;  seq[3] = 3;
-    seq[4] = base + 7;  seq[5] = 3;
-    seq[6] = base + 12; seq[7] = 10;
-    seq[8] = 0;
-    sfx_start(seq);
+    sfx_seq = 0;
+    SND4_CNT = ENV(6, 1, 0);            // soft thud on the noise channel
+    SND4_FREQ = RESTART | (4 << 4) | 2;
+}
+
+void sfx_launch(void)
+{
+    sfx_seq = 0;
+    SND1_SWEEP = (2 << 4) | 0x08 | 2;   // falling pew
+    SND1_CNT = DUTY(2) | ENV(10, 1, 0);
+    SND1_FREQ = RESTART | square_rate[84];
 }
 
 void sfx_move(void)

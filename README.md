@@ -2,9 +2,9 @@
 
 ![Nubby GBA title screen](docs/title-screen.png)
 
-A pegboard number-crunching game for the Game Boy Advance, loosely inspired by
-*Nubby's Number Factory*. Drop Nubby into the factory's pegboard, rack up
-points and multipliers, and hit each round's goal before you run out of drops.
+A number-popping roguelike for the Game Boy Advance, loosely inspired by
+*Nubby's Number Factory*. Aim Nubby from the launcher, bounce it off the walls
+and pop the numbered pegs to hit each round's quota in a single launch.
 
 ![A round in progress](docs/board.png)
 
@@ -15,32 +15,34 @@ points and multipliers, and hit each round's goal before you run out of drops.
 
 ## How to play
 
-- Move Nubby along the top with **Left / Right** (L / R for fine aim) and press **A** to drop.
-- Every peg Nubby touches counts once per drop:
-  - **White peg**: +1 point
-  - **Purple peg**: +1 multiplier
-  - **Gold peg**: +1 coin (and +1 point)
-  - **Blue bumper**: bounces Nubby hard, +1 point every bounce
-- Nubby lands in a bucket (x2, x1, x3, x1, x2). A drop scores
-  **points x multiplier x bucket**.
-- Reach the round's goal within 5 drops. Goals rise 40% each round; miss one
-  and the run is over.
-- Clearing a round pays 3 coins plus 1 for each unused drop. Spend them in the
-  shop on up to 4 items:
+- Aim the launcher at the top with **Left / Right** (L / R nudge one step) and
+  press **A** to launch Nubby. The dotted line shows where it will go.
+- Pegs hold powers of two. When Nubby hits a peg it **scores the peg's number
+  and halves it**: 8 becomes 4, then 2, then 1, and a 1 pops and vanishes.
+  Nubby bounces off pegs and the side walls until it falls into the shredder.
+- Each round has a **quota**, a share of all the points left on the board.
+  You must reach it **in a single launch**. Miss and you lose a life and the
+  board resets for another try.
+- Beat the quota and the board **restocks** once for every multiple of the
+  quota you scored: empty slots fill with new pegs, and pegs that match the
+  new value merge and double. Each restock pays a coin, and clearing a round
+  restores a life. New pegs get bigger every 4 rounds, and quotas rise.
+- Pop every peg on the board for a **perfect**: the launch scores double.
+- Every 3 rounds there's a shop. Hold up to 4 items:
 
 | Item | Effect | Cost |
 | --- | --- | --- |
-| Heavy | White pegs are worth 2 | 6 |
-| Multi | 2 more purple pegs on every board | 6 |
-| Extra | 1 more drop each round | 7 |
-| Spring | 2 more bumpers, and bumpers are worth 3 | 5 |
-| Lucky | Every 7th peg in a drop gives +7 | 5 |
-| Piggy | Earn 1 coin for every 4 you have saved | 4 |
-| Boost | Each drop starts with 5 points | 5 |
-| Bucket | The middle bucket is x5 | 6 |
+| Springs | The floor bounces Nubby back up once per launch | 6 |
+| Walls | Wall bounces score +3 | 4 |
+| Pump | The lowest peg doubles at the start of each round | 5 |
+| Big | Nubby is bigger | 6 |
+| First | The first hit of each launch scores x3 | 5 |
+| Floaty | Lower gravity, so Nubby hangs around longer | 5 |
+| Heart | +1 life now and +1 to your maximum | 7 |
+| Rich | +1 coin per restock | 4 |
 
-Your furthest round and best score are saved to cartridge SRAM (a `.sav` file
-in emulators).
+Your furthest round and best single launch are saved to cartridge SRAM (a
+`.sav` file in emulators).
 
 ## Building from source
 
@@ -142,8 +144,8 @@ make test
 ## Project layout
 
 ```
-source/main.c     Screens, input, HUD, shop, menus and credits
-source/game.c     Pegboard physics, scoring, rounds, items and the shop
+source/main.c     Screens, input, HUD, numbered peg sprites, shop, menus, credits
+source/game.c     Launch physics, popping pegs, quotas, restocks, items, shop
 source/sound.c    Music and sound effects on the GBA's PSG channels
 source/ui.c       Text, panels and menus
 source/save.c     Best round and score in SRAM

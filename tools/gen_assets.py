@@ -378,8 +378,12 @@ def write_png(path, rows):
 
 # ================================================================ Nubby artwork
 BOARD_L, BOARD_R = 40, 200
-BUCKET_Y, NUM_BUCKETS = 140, 5
-BUCKET_W = (BOARD_R - BOARD_L) // NUM_BUCKETS
+LAUNCH_X, LAUNCH_Y = 120, 18
+PIT_Y = 150
+# must match slots[] in source/game.c
+SLOTS = [(66, 42), (102, 42), (138, 42), (174, 42), (84, 60), (120, 60), (156, 60),
+         (66, 78), (102, 78), (138, 78), (174, 78), (84, 96), (120, 96), (156, 96),
+         (66, 114), (102, 114), (138, 114), (174, 114), (84, 132), (120, 132), (156, 132)]
 LIGHT = (-0.6, -0.8)
 
 INK = (28, 20, 36)
@@ -435,21 +439,40 @@ def pipe(cv, y0, x0, x1, base):
             cv.put(x + 1, y, scale(base, 1.4))
 
 
-def buckets(cv, base, accent):
-    for y in range(BUCKET_Y, H):
+def shredder(cv):
+    """The pit Nubby falls into at the bottom of the board."""
+    for y in range(PIT_Y, H):
         for x in range(BOARD_L, BOARD_R):
-            slot = (x - BOARD_L) // BUCKET_W
-            k = 0.55 + 0.25 * ((y - BUCKET_Y) / (H - BUCKET_Y))
-            c = scale(accent if slot == 2 else base, k)
-            if y >= H - 5:                                       # conveyor floor
-                c = (70, 66, 72) if ((x + y) // 3) % 2 else (46, 42, 50)
+            if y < PIT_Y + 2:
+                c = HAZARD_Y if ((x + y) // 4) % 2 == 0 else (30, 26, 24)
+            else:
+                k = (y - PIT_Y) / (H - PIT_Y)
+                c = scale((50, 40, 56), 1 - 0.8 * k)
+                if (x // 6 + y // 3) % 3 == 0 and y < H - 2:
+                    c = scale((150, 150, 165), 1 - 0.7 * k)        # shredder teeth
             cv.put(x, y, c)
-    for k in range(1, NUM_BUCKETS):                              # divider posts
-        x = BOARD_L + k * BUCKET_W
-        for y in range(BUCKET_Y, H - 5):
-            cv.put(x - 1, y, (200, 200, 210))
-            cv.put(x, y, (120, 120, 132))
-        disc(cv, x, BUCKET_Y, 1.8, (230, 230, 240))
+
+
+def launcher(cv, base):
+    """Nozzle hanging from the pipe that Nubby is fired from."""
+    for y in range(6, 14):
+        w = 7 if y < 11 else 6
+        for x in range(LAUNCH_X - w, LAUNCH_X + w):
+            k = 1.35 if x < LAUNCH_X - w + 2 else 0.6 if x > LAUNCH_X + w - 3 else 1.0
+            cv.put(x, y, scale(base, k * (0.8 if y == 13 else 1)))
+    for x in range(LAUNCH_X - 5, LAUNCH_X + 5):
+        cv.put(x, 13, (30, 26, 34))
+
+
+def slot_rings(cv, base):
+    """Faint sockets so empty peg slots are still visible."""
+    for sx, sy in SLOTS:
+        for y in range(sy - 9, sy + 10):
+            for x in range(sx - 9, sx + 10):
+                d = math.hypot(x + 0.5 - sx, y + 0.5 - sy)
+                if 5.5 < d < 7.5:
+                    lit = ((x - sx) * LIGHT[0] + (y - sy) * LIGHT[1]) / max(d, 1)
+                    cv.put(x, y, scale(cv.get(x, y), 0.7 + 0.25 * lit))
 
 
 def gear(cv, cx, cy, r, teeth, col):
@@ -467,9 +490,9 @@ def gear(cv, cx, cy, r, teeth, col):
 
 
 BOARD_THEMES = [
-    dict(name="steel", wall=(54, 62, 84), board=(78, 96, 128), bucket=(60, 70, 96), accent=(150, 110, 40)),
-    dict(name="copper", wall=(84, 54, 40), board=(150, 96, 62), bucket=(100, 64, 44), accent=(60, 120, 110)),
-    dict(name="lab", wall=(40, 72, 70), board=(84, 150, 138), bucket=(52, 98, 92), accent=(150, 80, 150)),
+    dict(name="steel", wall=(54, 62, 84), board=(78, 96, 128)),
+    dict(name="copper", wall=(84, 54, 40), board=(150, 96, 62)),
+    dict(name="lab", wall=(40, 72, 70), board=(84, 150, 138)),
 ]
 
 
@@ -484,8 +507,9 @@ def render_board(t, seed):
         cv.put(BOARD_R - 1, y, (200, 204, 214))
         cv.put(BOARD_R, y, scale(t["wall"], 0.45))
     pipe(cv, 2, BOARD_L, BOARD_R, (170, 176, 190))
-    # the dropper nozzle hangs from the pipe
-    buckets(cv, t["bucket"], t["accent"])
+    launcher(cv, (170, 176, 190))
+    slot_rings(cv, t["board"])
+    shredder(cv)
     # little gauges on the side panels
     for gx, gy in ((20, 150), (220, 150)):
         disc(cv, gx, gy, 6, (230, 226, 210))
@@ -536,7 +560,7 @@ def draw_big_nubby(cv, cx, cy, r):
 
 def render_title():
     cv = Canvas()
-    t = BOARD_THEMES[0]
+
     def wall(x, y):
         n = 0.85 + 0.25 * fbm(x / 10, y / 10, 71, 3)
         vx, vy = (x - 120) / 150, (y - 70) / 120
@@ -573,16 +597,11 @@ def render_title():
 # ---------------------------------------------------------------- sprites
 NUBBY_PAL = [(0, 0, 0), NUBBY_BODY[0], NUBBY_BODY[1], NUBBY_BODY[2], NUBBY_BODY[3], INK, (255, 255, 255),
              (255, 120, 150)]
-PEG_PALS = [
-    [(80, 84, 96), (170, 176, 190), (225, 228, 238), (255, 255, 255)],      # plus
-    [(200, 150, 40), (255, 236, 120), (255, 252, 200), (255, 255, 255)],    # plus lit
-    [(70, 20, 110), (150, 60, 210), (210, 140, 250), (255, 230, 255)],      # mult
-    [(200, 60, 200), (255, 140, 255), (255, 220, 255), (255, 255, 255)],    # mult lit
-    [(130, 90, 10), (230, 176, 40), (255, 226, 110), (255, 255, 220)],      # coin
-    [(230, 150, 20), (255, 230, 90), (255, 255, 190), (255, 255, 255)],     # coin lit
-    [(20, 60, 130), (40, 150, 230), (140, 220, 255), (255, 255, 255)],      # bumper
-    [(80, 150, 240), (150, 230, 255), (230, 250, 255), (255, 255, 255)],    # bumper flash
-]
+# peg colours by value: 1, 2, 4, ... 256+ (index 5 is the number)
+TIERS = [(200, 204, 214), (110, 210, 110), (90, 200, 220), (90, 130, 240), (170, 100, 240),
+         (240, 110, 190), (240, 80, 70), (250, 150, 50), (250, 214, 60)]
+TIER_PALS = [[scale(c, 0.45), scale(c, 0.85), c, mix(c, (255, 255, 255), 0.6), INK] for c in TIERS]
+FLASH_PAL = [(200, 200, 210), (240, 240, 250), (255, 255, 255), (255, 255, 255), INK]
 ICON_PAL = [(0, 0, 0), INK, (255, 255, 255),
             (190, 194, 206), (110, 114, 130),     # gray
             (190, 110, 250), (110, 40, 170),      # purple
@@ -594,14 +613,14 @@ ICON_PAL = [(0, 0, 0), INK, (255, 255, 255),
 ICON_COLORS = {"gray": (3, 4), "purple": (5, 6), "green": (7, 8), "gold": (9, 10),
                "blue": (11, 12), "pink": (13, 14), "orange": (15, 10)}
 ICONS = [   # (colour, 5x7 symbol) in item order
-    ("gray", GLYPHS["2"]),
-    ("purple", GLYPHS["X"]),
-    ("gold", GLYPHS["+"]),
-    ("blue", ".###. ....# .###. #.... .###. ....# .###."),
-    ("green", GLYPHS["7"]),
-    ("pink", "..#.. .#### #.#.. .###. ..#.# ####. ..#.."),
-    ("orange", "..#.. .###. #.#.# ..#.. ..#.. ..#.. ..#.."),
-    ("gray", GLYPHS["5"]),
+    ("blue", "..#.. .###. #.#.# ..#.. ..#.. ..#.. ..#.."),     # springs: up arrow
+    ("gray", GLYPHS["W"]),                                   # walls
+    ("purple", GLYPHS["X"]),                                 # pump: x2
+    ("orange", GLYPHS["+"]),                                 # big
+    ("gold", GLYPHS["3"]),                                   # first hit x3
+    ("green", GLYPHS["F"]),                                  # floaty
+    ("pink", "..... .#.#. ##### ##### .###. ..#.. ....."),     # heart
+    ("gold", "..#.. .#### #.#.. .###. ..#.# ####. ..#.."),     # rich: $
 ]
 
 
@@ -617,7 +636,7 @@ def peg_sprite(size, r):
             hl = math.hypot(dx + r * 0.35, dy + r * 0.35)
             if hl < r * 0.3:
                 img[y][x] = 4
-            elif d > r - 1 or dx + dy > r * 0.9:
+            elif d > r - 1 or dx + dy > r * 1.15:
                 img[y][x] = 1
             elif hl < r * 0.75:
                 img[y][x] = 3
@@ -626,40 +645,32 @@ def peg_sprite(size, r):
     return img
 
 
-def bumper_sprite():
-    img = peg_sprite(16, 7.2)
-    for y in range(16):
-        for x in range(16):
-            d = math.hypot(x + 0.5 - 8, y + 0.5 - 8)
-            if img[y][x] and 3.5 < d < 4.6:
-                img[y][x] = 3            # inner ring
-            if img[y][x] and d < 1.6:
-                img[y][x] = 4
-    return img
-
-
-def nubby_sprite(blink):
-    img = [[0] * 8 for _ in range(8)]
-    for y in range(8):
-        for x in range(8):
-            dx, dy = x + 0.5 - 4, y + 0.5 - 4
+def nubby_sprite(blink, size=8, r=4.1):
+    img = [[0] * size for _ in range(size)]
+    c = size / 2
+    k = r / 4.1                      # scale features with the body
+    for y in range(size):
+        for x in range(size):
+            dx, dy = x + 0.5 - c, y + 0.5 - c
             d = math.hypot(dx, dy)
-            if d > 4.1:
+            if d > r:
                 continue
-            if d > 3.3:
+            if d > r - 0.8:
                 img[y][x] = 1
-            elif math.hypot(dx + 1.5, dy + 1.6) < 1.0:
+            elif math.hypot(dx + 1.5 * k, dy + 1.6 * k) < 1.0 * k:
                 img[y][x] = 4
             elif dx + dy < 0:
                 img[y][x] = 3
             else:
                 img[y][x] = 2
-    if blink:
-        img[3][2] = img[3][5] = 5
-    else:
-        img[3][2] = img[3][5] = 5
-        img[2][2] = img[2][5] = 5
-    img[5][1] = img[5][6] = 7            # cheeks
+    ex = [int(c - 1.5 * k), int(c + 1.2 * k)]
+    ey = int(c - 1 * k)
+    for x in ex:
+        img[ey][x] = 5
+        if not blink:
+            img[ey - 1][x] = 5
+    for x in (int(c - 3 * k + 0.5), int(c + 2.6 * k)):
+        img[int(c + 1.3 * k)][x] = 7        # cheeks
     return img
 
 
@@ -690,8 +701,9 @@ FONT_PAL = [(0, 0, 0), (255, 255, 255), (24, 18, 30), (40, 44, 62), (240, 196, 6
             (150, 100, 20), (255, 226, 90), (70, 76, 100)]
 font_pal = pal16(FONT_PAL)
 obj_pal = pal16(NUBBY_PAL)
-for p in PEG_PALS:
+for p in TIER_PALS:
     obj_pal += pal16([(0, 0, 0)] + p)
+obj_pal += pal16([(0, 0, 0)] + FLASH_PAL)
 obj_pal += pal16(ICON_PAL)
 
 # sprite tiles (4bpp, 1D mapping); record where each sprite starts
@@ -705,8 +717,13 @@ def add_sprite(name, img):
 
 add_sprite("nubby", nubby_sprite(False))
 add_sprite("nubby_blink", nubby_sprite(True))
-add_sprite("peg", peg_sprite(8, 3.6))
-add_sprite("bumper", bumper_sprite())
+add_sprite("nubby_big", nubby_sprite(False, 16, 6.1))
+add_sprite("nubby_big_blink", nubby_sprite(True, 16, 6.1))
+add_sprite("peg", peg_sprite(16, 7.6))          # template; numbers are drawn on in game
+dot = [[0] * 8 for _ in range(8)]
+dot[3][3] = dot[3][4] = dot[4][3] = dot[4][4] = 6    # white
+dot[5][4] = dot[4][5] = dot[5][5] = 5
+add_sprite("dot", dot)
 for i, (colour, sym) in enumerate(ICONS):
     add_sprite(f"icon{i}", icon_sprite(colour, sym))
 
@@ -731,12 +748,17 @@ hdr = f"""// Generated by tools/gen_assets.py - do not edit.
 // sprite tiles and palette banks
 #define TILE_NUBBY {tile_of["nubby"]}
 #define TILE_NUBBY_BLINK {tile_of["nubby_blink"]}
-#define TILE_PEG {tile_of["peg"]}
-#define TILE_BUMPER {tile_of["bumper"]}
+#define TILE_NUBBY_BIG {tile_of["nubby_big"]}
+#define TILE_NUBBY_BIG_BLINK {tile_of["nubby_big_blink"]}
+#define TILE_PEG {tile_of["peg"]}           // 16x16 disc template (4 tiles)
+#define TILE_DOT {tile_of["dot"]}
 #define TILE_ICON(i) ({tile_of["icon0"]} + (i) * 4)
+#define TILE_FREE {len(obj_tiles) // 8}        // first unused sprite tile
 #define PAL_NUBBY 0
-#define PAL_PEG(type, lit) (1 + (type) * 2 + (lit))   // type: plus, mult, coin, bumper
-#define PAL_ICON {1 + len(PEG_PALS)}
+#define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
+#define NUM_TIERS {len(TIERS)}
+#define PAL_FLASH {1 + len(TIERS)}
+#define PAL_ICON {2 + len(TIERS)}
 
 extern const uint16_t font_pal[16];
 extern const uint16_t obj_pal[{len(obj_pal)}];
@@ -794,33 +816,40 @@ def text(img, tx, ty, s, fg=(255, 255, 255)):
 def board_preview(n):
     pal, _, idx = board_imgs[n]
     img = to_rgb(pal, idx)
-    peg = peg_sprite(8, 3.6)
-    bump = bumper_sprite()
-    k = 0
-    for row in range(8):
-        y = 34 + row * 13
-        for c in range(8 if row & 1 else 9):
-            x = (60 if row & 1 else 52) + c * 16
-            k += 1
-            if hash2(x, y, n) < 0.14:
-                continue
-            kind = 1 if k % 11 == 0 else 2 if k % 13 == 0 else 0
-            lit = 1 if (row in (0, 1, 2) and c in (3, 4)) else 0
-            blit(img, peg, x - 4, y - 4, [(0, 0, 0)] + PEG_PALS[kind * 2 + lit])
-    blit(img, bump, 100 - 8, 73 - 8, [(0, 0, 0)] + PEG_PALS[6])
-    blit(img, nubby_sprite(False), 116 - 4, 44 - 4, NUBBY_PAL)
-    for i, lab in enumerate(["X2", "X1", "X3", "X1", "X2"]):
-        text(img, 6 + i * 4, 18, lab, FONT_PAL[6])
-    for row, s in ((1, "ROUND"), (2, "   01"), (4, "GOAL"), (5, "  130"), (7, "SCORE"), (8, "   64"),
-                   (10, "DROPS"), (11, "    3"), (13, "PTS"), (14, "   12"), (15, "MULT"), (16, "X   2")):
+    disc16 = peg_sprite(16, 7.6)
+    values = [1, 2, 1, 4, 2, 8, 1, 0, 2, 16, 4, 1, 2, 32, 1, 0, 4, 2, 8, 1, 2]
+    for (sx, sy), v in zip(SLOTS, values):
+        if not v:
+            continue
+        tier = min(len(TIERS) - 1, v.bit_length() - 1)
+        blit(img, disc16, sx - 8, sy - 8, [(0, 0, 0)] + TIER_PALS[tier])
+        digits = str(v)
+        w = len(digits) * 4 - 1
+        for k, ch in enumerate(digits):
+            for r, row in enumerate(DIGITS3[int(ch)]):
+                for c, p in enumerate(row):
+                    if p == "#":
+                        img[sy - 3 + r][sx - w // 2 + k * 4 + c] = INK
+    blit(img, nubby_sprite(False), LAUNCH_X - 4, LAUNCH_Y - 4, NUBBY_PAL)
+    for k in range(1, 7):
+        x, y = LAUNCH_X + k * 3, LAUNCH_Y + k * 4 + k * k // 4
+        blit(img, dot, x - 4, y - 4, NUBBY_PAL)
+    for row, s in ((1, "ROUND"), (2, "    4"), (4, "GOAL"), (5, "   38"), (7, "SCORE"), (8, "   12"),
+                   (10, "LIVES"), (11, "    3")):
         text(img, 0, row, s)
     text(img, 25, 1, "COINS")
     text(img, 25, 2, "    7")
     text(img, 25, 4, "ITEMS")
-    for i, it in enumerate((0, 5, 7)):
-        light = [(0, 0, 0)] + ICON_PAL[1:]
-        blit(img, icon_sprite(*ICONS[it]), 212, 44 + i * 20, light)
+    for i, it in enumerate((0, 4, 6)):
+        blit(img, icon_sprite(*ICONS[it]), 212, 44 + i * 20, [(0, 0, 0)] + ICON_PAL[1:])
     return img
+
+
+# 3x5 digits drawn onto pegs in game (must match digits3x5 in source/main.c)
+DIGITS3 = [r.split() for r in [
+    "### #.# #.# #.# ###", ".#. ##. .#. .#. ###", "### ..# ### #.. ###", "### ..# ### ..# ###",
+    "#.# #.# ### ..# ..#", "### #.. ### ..# ###", "### #.. ### #.# ###", "### ..# ..# .#. .#.",
+    "### #.# ### #.# ###", "### #.# ### ..# ###"]]
 
 
 def save_scaled(name, img, k):
