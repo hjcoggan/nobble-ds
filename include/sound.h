@@ -9,7 +9,7 @@
 void sound_init(void);
 void sound_update(void);     // call once per frame
 
-enum { SONG_FACTORY, SONG_SHOP, SONG_OVERTIME, NUM_SONGS };
+enum { SONG_FACTORY, SONG_SHOP, SONG_OVERTIME, SONG_ASSEMBLY, SONG_MELTDOWN, SONG_BOSS, NUM_SONGS };
 
 void music_play(int song);   // start a song from the top
 void music_stop(void);       // silence, keeping the song position
@@ -27,5 +27,7 @@ void sfx_buy(void);
 void sfx_deny(void);
 void sfx_clear(void);
 void sfx_over(void);
+void sfx_laser(void);        // boss laser fires
+void sfx_armor(void);        // an armoured peg cracks
 
 #endif

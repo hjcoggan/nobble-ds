@@ -10,6 +10,7 @@
 #define TXT_PANEL 1
 #define TXT_HILITE 2
 #define TXT_GOLD 3
+#define TXT_DIM 4
 
 void text_clear(void);
 void text_clear_row(int y);

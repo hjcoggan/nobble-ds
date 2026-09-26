@@ -125,6 +125,87 @@ static const Song songs[NUM_SONGS] = {
         },
         .step_frames = 6, .duty = 1, .lead_vol = 9, .lead_decay = 2, .bass_vol = 1,
     },
+    {   // 3: Assembly Line - D dorian bounce, ~120 BPM
+        .lead = {
+            "D5 .. F5 .. A5 -- G5 .. F5 .. E5 -- D5 -- .. ..",
+            "C5 .. E5 .. G5 -- F5 .. E5 .. D5 -- C5 -- .. ..",
+            "D5 .. F5 .. A5 -- C6 .. B5 .. A5 -- G5 -- F5 --",
+            "E5 -- -- -- G5 -- -- -- A5 -- -- -- .. .. .. ..",
+            "A5 .. A5 B5 C6 -- A5 .. G5 .. G5 A5 B5 -- G5 ..",
+            "F5 .. F5 G5 A5 -- F5 .. E5 .. E5 F5 G5 -- E5 ..",
+            "D5 .. F5 .. A5 .. D6 -- C6 -- A5 -- G5 -- E5 --",
+            "D5 -- -- -- -- -- .. .. A4 .. D5 .. .. .. .. ..",
+        },
+        .bass = {
+            "D2 .. D3 .. A2 .. D3 .. D2 .. D3 .. A2 .. C3 ..",
+            "C2 .. C3 .. G2 .. C3 .. C2 .. C3 .. G2 .. B2 ..",
+            "D2 .. D3 .. A2 .. D3 .. F2 .. F3 .. C3 .. F3 ..",
+            "G2 .. G3 .. D3 .. G3 .. A2 .. A3 .. E3 .. A2 ..",
+            "A2 .. A3 .. E3 .. A3 .. G2 .. G3 .. D3 .. G3 ..",
+            "F2 .. F3 .. C3 .. F3 .. E2 .. E3 .. B2 .. E3 ..",
+            "D2 .. D3 .. A2 .. D3 .. C2 .. C3 .. G2 .. C3 ..",
+            "D2 -- -- -- .. .. .. .. A2 .. A2 .. D2 .. .. ..",
+        },
+        .drums = {
+            "K--HS-H-K-KHS-H-", "K--HS-H-K-KHS-H-", "K--HS-H-K-KHS-H-", "K--HS-H-K-KHS-TT",
+            "K--HS-H-K-KHS-H-", "K--HS-H-K-KHS-H-", "K--HS-H-K-KHS-H-", "K---S---K-K-SSTT",
+        },
+        .step_frames = 7, .duty = 1, .lead_vol = 10, .lead_decay = 3, .bass_vol = 1,
+    },
+    {   // 4: Meltdown - G minor, driving, ~180 BPM
+        .lead = {
+            "G5 .. G5 A#5 D6 .. C6 A#5 A5 .. G5 .. D5 .. G5 ..",
+            "F5 .. F5 A5 C6 .. A#5 A5 G5 .. F5 .. C5 .. F5 ..",
+            "D#5 .. D#5 G5 A#5 .. A5 G5 F5 .. D#5 .. D5 .. C5 ..",
+            "D5 -- -- -- F#5 -- -- -- A5 -- -- -- D6 -- -- --",
+            "G6 -- F6 -- D6 -- A#5 -- G5 -- A#5 -- D6 -- F6 --",
+            "D#6 -- D6 -- C6 -- A5 -- F5 -- A5 -- C6 -- D#6 --",
+            "D6 -- C6 -- A#5 -- A5 -- G5 -- F5 -- D#5 -- D5 --",
+            "D5 .. F#5 .. A5 .. D6 .. G5 -- -- -- .. .. .. ..",
+        },
+        .bass = {
+            "G1 G2 G1 G2 G1 G2 G1 G2 G1 G2 G1 G2 G1 G2 G1 G2",
+            "F1 F2 F1 F2 F1 F2 F1 F2 F1 F2 F1 F2 F1 F2 F1 F2",
+            "D#1 D#2 D#1 D#2 D#1 D#2 D#1 D#2 D#1 D#2 D#1 D#2 D#1 D#2 D#1 D#2",
+            "D1 D2 D1 D2 D1 D2 D1 D2 D1 D2 D1 D2 D1 D2 D1 D2",
+            "G1 G2 G1 G2 G1 G2 G1 G2 G1 G2 G1 G2 G1 G2 G1 G2",
+            "C2 C3 C2 C3 C2 C3 C2 C3 F1 F2 F1 F2 F1 F2 F1 F2",
+            "D#1 D#2 D#1 D#2 D#1 D#2 D#1 D#2 D1 D2 D1 D2 D1 D2 D1 D2",
+            "D1 D2 D1 D2 D1 D2 D1 D2 G1 -- -- -- .. .. .. ..",
+        },
+        .drums = {
+            "KHHHSHHHKHKHSHHH", "KHHHSHHHKHKHSHHH", "KHHHSHHHKHKHSHHH", "KHHHSHHHKKSSTTTT",
+            "KHHHSHHHKHKHSHHH", "KHHHSHHHKHKHSHHH", "KHHHSHHHKHKHSHHH", "KHHHSHHHKKSSTTTT",
+        },
+        .step_frames = 5, .duty = 2, .lead_vol = 9, .lead_decay = 1, .bass_vol = 1,
+    },
+    {   // 5: Boss - C minor, menacing, ~150 BPM
+        .lead = {
+            "C5 .. C5 .. D#5 .. C5 .. F#5 -- F5 -- D#5 -- C5 --",
+            "C5 .. C5 .. D#5 .. C5 .. G5 -- F#5 -- F5 -- D#5 --",
+            "G#5 -- G5 -- F5 -- D#5 -- F5 -- D#5 -- D5 -- B4 --",
+            "C5 -- -- -- .. .. C6 .. B5 .. A#5 .. A5 .. G#5 ..",
+            "C6 .. C6 .. B5 .. C6 .. D#6 -- D6 -- C6 -- G5 --",
+            "G#5 .. G#5 .. G5 .. G#5 .. C6 -- B5 -- G#5 -- G5 --",
+            "F5 -- G5 -- G#5 -- B5 -- C6 -- D6 -- D#6 -- F#6 --",
+            "G6 -- -- -- F#6 -- -- -- G6 -- -- -- .. .. .. ..",
+        },
+        .bass = {
+            "C2 C2 .. C2 C2 .. C2 .. C2 C2 .. C2 F#2 .. G2 ..",
+            "C2 C2 .. C2 C2 .. C2 .. C2 C2 .. C2 F#2 .. G2 ..",
+            "G#1 G#1 .. G#1 G#1 .. G#1 .. G1 G1 .. G1 G1 .. B1 ..",
+            "C2 C2 .. C2 C2 .. C2 .. C2 C2 .. C2 G1 .. G#1 ..",
+            "C2 C2 .. C2 C2 .. C2 .. C2 C2 .. C2 F#2 .. G2 ..",
+            "G#1 G#1 .. G#1 G#1 .. G#1 .. F1 F1 .. F1 F1 .. G1 ..",
+            "F1 .. F2 .. G1 .. G2 .. G#1 .. G#2 .. B1 .. B2 ..",
+            "C2 -- -- -- B1 -- -- -- C2 -- -- -- G1 .. G1 ..",
+        },
+        .drums = {
+            "K--K--S-K--K--S-", "K--K--S-K--K--S-", "K--K--S-K--K--S-", "K--K--S-K-K-SSSS",
+            "K--K--S-K--K--S-", "K--K--S-K--K--S-", "K--K--S-K--K--S-", "K--K--S-TTTTSSSS",
+        },
+        .step_frames = 6, .duty = 0, .lead_vol = 11, .lead_decay = 2, .bass_vol = 1,
+    },
 };
 
 #define HOLD 1
@@ -382,6 +463,22 @@ void sfx_clear(void)
 {
     static const uint8_t seq[] = { 72, 6, 76, 6, 79, 6, 84, 6, 88, 20, 0 };
     music_stop();
+    sfx_start(seq);
+}
+
+void sfx_laser(void)
+{
+    sfx_seq = 0;
+    SND1_SWEEP = (1 << 4) | 0x08 | 1;   // fast falling zap
+    SND1_CNT = DUTY(2) | ENV(13, 2, 0);
+    SND1_FREQ = RESTART | square_rate[103];
+    SND4_CNT = ENV(9, 2, 0);            // with a crackle underneath
+    SND4_FREQ = RESTART | (2 << 4) | 1;
+}
+
+void sfx_armor(void)
+{
+    static const uint8_t seq[] = { 98, 2, 86, 2, 98, 3, 0 };   // metallic clank
     sfx_start(seq);
 }
 

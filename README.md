@@ -30,7 +30,7 @@ and pop the numbered pegs to hit each round's quota in a single launch.
 - Pop every peg on the board for a **perfect**: the launch scores double.
 - Every 3 rounds there's a shop. You can hold up to **5 items**, and each
   one fires on its own trigger. With all 5, buying another lets you swap out
-  one you already have:
+  one you already have, and you get half its price back:
 
 | Item | Trigger | Effect | Cost |
 | --- | --- | --- | --- |
@@ -59,6 +59,18 @@ and pop the numbered pegs to hit each round's quota in a single launch.
 | Trophy | Passing the goal | All items |
 | Buckshot | First pop is the biggest peg | 3 random items |
 | House of Cards | 15 pegs popped | All items |
+
+- Every 5th round is a **boss round** with a hazard on the board. Beat it for
+  3 bonus coins:
+
+| Boss | Hazard |
+| --- | --- |
+| Laser Grid | A laser locks onto a row, blinks a warning, then wipes it out |
+| Wind Tunnel | Gusts push Nubby sideways, switching direction every 1.5 seconds |
+| Armour Plating | Steel-grey pegs need one hit to crack the armour before they score |
+
+- The music changes every 5 rounds (Factory Funk, Assembly Line, Overtime,
+  Meltdown), and boss rounds have their own theme.
 
 Press **Start** to pause. **Items and perks** in the pause menu lets you flick
 through everything you own (left and right) to check what each one does.

@@ -9,9 +9,23 @@
 #define WALL_BOUNCE 230
 #define PEG_COOLDOWN 6
 #define MAX_RICOCHETS 6            // ricochet pops per launch
+#define WIND_PUSH 6          // sideways push per frame in the wind tunnel
+#define WIND_FLIP 90         // frames between wind changes
+#define LASER_EVERY 110      // frames between laser shots
 #define MAX_DEPTH 2                // items triggering items triggering items
 
 // 6 rows alternating 4 and 3 pegs
+const BossInfo boss_info[NUM_BOSSES] = {
+    [BOSS_NONE]  = { "", "", "" },
+    [BOSS_LASER] = { "LASER GRID",    "A LASER WIPES OUT A",   "ROW EVERY 2 SECONDS" },
+    [BOSS_WIND]  = { "WIND TUNNEL",   "GUSTS PUSH NUBBY",      "LEFT AND RIGHT" },
+    [BOSS_ARMOR] = { "ARMOUR PLATING", "ARMOURED PEGS NEED",   "A HIT TO CRACK FIRST" },
+};
+
+static const int16_t row_y[NUM_ROWS] = { 42, 60, 78, 96, 114, 132 };
+
+int game_row_y(int row) { return row_y[row]; }
+
 const Slot slots[NUM_SLOTS] = {
     { 66, 42 }, { 102, 42 }, { 138, 42 }, { 174, 42 },
     { 84, 60 }, { 120, 60 }, { 156, 60 },
@@ -120,9 +134,32 @@ static int quota_for(const Game *g)
     return q < 5 ? 5 : q;
 }
 
+int game_boss_for(int round)
+{
+    if (round % BOSS_EVERY) return BOSS_NONE;
+    return 1 + (round / BOSS_EVERY - 1) % (NUM_BOSSES - 1);
+}
+
 static void begin_round(Game *g)
 {
-    for (int i = 0; i < NUM_SLOTS; i++) g->round_start[i] = g->pegs[i];
+    g->boss = game_boss_for(g->round);
+    // armour goes on the more valuable half of the pegs
+    int32_t mid = 0;
+    int n = 0;
+    for (int i = 0; i < NUM_SLOTS; i++)
+        if (g->pegs[i]) {
+            mid += g->pegs[i];
+            n++;
+        }
+    mid = n ? mid / n : 0;
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        g->armor[i] = g->boss == BOSS_ARMOR && g->pegs[i] && g->pegs[i] >= mid && rand_below(g, 3);
+        g->armor_start[i] = g->armor[i];
+        g->round_start[i] = g->pegs[i];
+    }
+    g->wind = rand_below(g, 2) ? 1 : -1;
+    g->laser_row = -1;
+    g->laser_timer = 0;
     g->quota = quota_for(g);
     g->score = 0;
 }
@@ -191,6 +228,7 @@ static int pop_peg(Game *g, int i)
     g->score += v;
     g->hits++;
     g->pegs[i] = v / 2;              // a 1 disappears
+    if (!g->pegs[i]) g->armor[i] = 0;
     g->cooldown[i] = PEG_COOLDOWN;
     g->flash[i] = FLASH_FRAMES;
     if (g->ev) {
@@ -325,6 +363,7 @@ void game_launch(Game *g, int angle)
     g->vy = icos(angle) * LAUNCH_SPEED / 256;
     g->score = g->hits = g->frames = g->still = g->spring_used = 0;
     g->ricochets = g->passed_goal = 0;
+    g->laser_row = -1;
     g->flying = 1;
     fire(g, TRIG_LAUNCH);
 }
@@ -362,6 +401,13 @@ static int collide(Game *g, int nr, int cx, int cy)
 // Nubby hit peg i.
 static void hit_peg(Game *g, int i)
 {
+    if (g->armor[i]) {                  // boss armour: this hit only cracks it
+        g->armor[i] = 0;
+        g->cooldown[i] = PEG_COOLDOWN;
+        g->flash[i] = FLASH_FRAMES;
+        if (g->ev) g->ev->armor = 1;
+        return;
+    }
     int first = g->hits == 0;
     int was_top = g->pegs[i] == highest_value(g);
     pop_peg(g, i);
@@ -408,6 +454,7 @@ static void substep(Game *g, Events *ev)
 {
     int r = game_radius(g);
     g->vy += GRAVITY / SUBSTEPS;
+    if (g->boss == BOSS_WIND) g->vx += g->wind * WIND_PUSH / SUBSTEPS;
     clamp_speed(&g->vx, &g->vy);
     g->x += g->vx / SUBSTEPS;
     g->y += g->vy / SUBSTEPS;
@@ -422,9 +469,35 @@ static void substep(Game *g, Events *ev)
         if (g->pegs[i] && collide(g, r, slots[i].x, slots[i].y) && !g->cooldown[i]) hit_peg(g, i);
 }
 
+// Boss laser: every LASER_EVERY frames in flight it locks onto a row with
+// pegs, warns, then wipes the row out. Wiped pegs score nothing.
+static void laser(Game *g, Events *ev)
+{
+    if (g->laser_row < 0) {
+        if (g->frames % LASER_EVERY != LASER_EVERY / 2) return;
+        int best = -1, n = 0;
+        for (int row = 0; row < NUM_ROWS; row++) {
+            int any = 0;
+            for (int i = 0; i < NUM_SLOTS; i++) any |= g->pegs[i] && slots[i].y == row_y[row];
+            if (any && rand_below(g, ++n) == 0) best = row;
+        }
+        if (best < 0) return;
+        g->laser_row = best;
+        g->laser_timer = 0;
+        return;
+    }
+    g->laser_timer++;
+    if (g->laser_timer == LASER_WARN) {
+        for (int i = 0; i < NUM_SLOTS; i++)
+            if (slots[i].y == row_y[g->laser_row]) g->pegs[i] = g->armor[i] = 0;
+        ev->laser = 1;
+    }
+    if (g->laser_timer >= LASER_WARN + LASER_BEAM) g->laser_row = -1;
+}
+
 int game_step(Game *g, Events *ev)
 {
-    ev->pop = ev->gone = ev->wall = ev->spring = ev->item = 0;
+    ev->pop = ev->gone = ev->wall = ev->spring = ev->item = ev->laser = ev->armor = 0;
     for (int i = 0; i < NUM_SLOTS; i++) {
         if (g->cooldown[i]) g->cooldown[i]--;
         if (g->flash[i]) g->flash[i]--;
@@ -438,6 +511,9 @@ int game_step(Game *g, Events *ev)
     g->ev = ev;
     for (int s = 0; s < SUBSTEPS; s++) substep(g, ev);
     g->frames++;
+
+    if (g->boss == BOSS_WIND && g->frames % WIND_FLIP == 0) g->wind = -g->wind;
+    if (g->boss == BOSS_LASER) laser(g, ev);
 
     if (game_has_perk(g, PERK_CHEESY) && g->frames % 180 == 0) trigger_all(g, PERK_CHEESY);
     if (game_has_perk(g, PERK_CHAOTIC) && g->frames % 60 == 0) trigger_random(g, 1, PERK_CHAOTIC);
@@ -490,6 +566,7 @@ Result game_resolve(Game *g)
         if (g->restocks > MAX_RESTOCKS) g->restocks = MAX_RESTOCKS;
         for (int k = 0; k < g->restocks; k++) restock(g);
         if (g->lives < g->max_lives) g->lives++;
+        if (g->boss) g->coins += BOSS_BONUS;
         g->round++;
         begin_round(g);
         return RESULT_CLEARED;
@@ -497,7 +574,11 @@ Result game_resolve(Game *g)
 
     g->restocks = 0;
     g->lives--;
-    for (int i = 0; i < NUM_SLOTS; i++) g->pegs[i] = g->round_start[i];
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        g->pegs[i] = g->round_start[i];
+        g->armor[i] = g->armor_start[i];
+    }
+    g->laser_row = -1;
     return g->lives > 0 ? RESULT_RETRY : RESULT_GAME_OVER;
 }
 
@@ -521,6 +602,8 @@ void game_roll_shop(Game *g)
     }
 }
 
+int game_refund(int item) { return item_info[item].price / 2; }
+
 int game_buy(Game *g, int slot)
 {
     return game_buy_swap(g, slot, -1);
@@ -539,6 +622,7 @@ int game_buy_swap(Game *g, int slot, int replace)
             g->max_lives--;
             if (g->lives > g->max_lives) g->lives = g->max_lives;
         }
+        g->coins += game_refund(g->items[replace]);
         g->items[replace] = (uint8_t)item;
         g->item_flash[replace] = 0;
     }
@@ -584,6 +668,7 @@ int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
     for (int f = 1; f <= 60 && count < n; f++) {
         for (int s = 0; s < SUBSTEPS; s++) {
             vy += GRAVITY / SUBSTEPS;
+            if (g->boss == BOSS_WIND) vx += g->wind * WIND_PUSH / SUBSTEPS;
             clamp_speed(&vx, &vy);
             x += vx / SUBSTEPS;
             y += vy / SUBSTEPS;

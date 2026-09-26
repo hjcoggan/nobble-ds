@@ -3,6 +3,8 @@
 
 static int failures;
 
+#define FIX_TEST(v) ((v) * 256)
+
 #define CHECK(cond) do { \
     if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } \
 } while (0)
@@ -166,10 +168,11 @@ static void test_shop(void)
     CHECK(g.nitems == MAX_ITEMS && bought == MAX_ITEMS - 1);
     game_roll_shop(&g);
     CHECK(!game_buy(&g, 0));                  // no room for a sixth item
-    int wanted = g.shop[0], coins = g.coins;
-    CHECK(game_buy_swap(&g, 0, 2));           // ...but it can replace one
+    int wanted = g.shop[0], coins = g.coins, old = g.items[2];
+    CHECK(game_buy_swap(&g, 0, 2));           // ...but it can replace one, for a partial refund
     CHECK(g.nitems == MAX_ITEMS && g.items[2] == wanted && g.shop[0] == -1);
-    CHECK(g.coins == coins - item_info[wanted].price);
+    CHECK(game_refund(old) > 0 && game_refund(old) < item_info[old].price);
+    CHECK(g.coins == coins - item_info[wanted].price + game_refund(old));
 
     game_new_run(&g, 12);                     // swapping a heart away takes its life
     g.coins = 100;
@@ -295,6 +298,70 @@ static void test_everything_terminates(void)
     printf("  loaded-up launches: %ld, average score %ld\n", launches, total / launches);
 }
 
+static void test_bosses(void)
+{
+    CHECK(game_boss_for(4) == BOSS_NONE && game_boss_for(5) == BOSS_LASER);
+    CHECK(game_boss_for(10) == BOSS_WIND && game_boss_for(15) == BOSS_ARMOR);
+    CHECK(game_boss_for(20) == BOSS_LASER);
+
+    // laser: wipes a whole row, scoring nothing, and the board comes back after a miss
+    Game g;
+    game_new_run(&g, 21);
+    g.round = 5;
+    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 1;
+    g.boss = BOSS_LASER;
+    g.lives = 3;
+    g.score = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) g.round_start[i] = g.pegs[i];
+    Events ev;
+    game_launch(&g, AIM_MAX);
+    int fired = 0;
+    while (!game_step(&g, &ev)) fired |= ev.laser;
+    int empty = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) empty += g.pegs[i] == 0;
+    CHECK(fired && empty >= 3);
+    g.quota = 1000;
+    game_resolve(&g);
+    for (int i = 0; i < NUM_SLOTS; i++) CHECK(g.pegs[i] == 1);
+
+    // armour: the first hit cracks it and scores nothing
+    game_new_run(&g, 22);
+    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
+    g.pegs[5] = 4;
+    g.armor[5] = 1;
+    game_launch(&g, 0);
+    while (!game_step(&g, &ev) && !ev.armor) {}
+    CHECK(g.armor[5] == 0 && g.pegs[5] == 4 && g.score == 0);
+
+    // wind drifts a straight-down launch sideways
+    game_new_run(&g, 23);
+    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
+    g.boss = BOSS_WIND;
+    g.wind = 1;
+    game_launch(&g, 0);
+    for (int f = 0; f < 40; f++) game_step(&g, &ev);
+    CHECK(g.x > FIX_TEST(LAUNCH_X + 4));
+
+    // beating a boss round pays a bonus; how often do random-aim runs beat them?
+    int tried = 0, beaten = 0;
+    for (int run = 0; run < 300; run++) {
+        game_new_run(&g, 900 + run);
+        while (g.round <= 20) {
+            int round = g.round, boss = g.boss;
+            run_launch(&g, random_angle(&g));
+            Result r = game_resolve(&g);
+            if (boss) {
+                tried++;
+                beaten += r == RESULT_CLEARED;
+            }
+            (void)round;
+            if (r == RESULT_GAME_OVER) break;
+        }
+    }
+    printf("  boss launches: %d, beaten %d%%\n", tried, tried ? beaten * 100 / tried : 0);
+    CHECK(tried > 0 && beaten > 0);
+}
+
 static void test_predict(void)
 {
     Game g;
@@ -317,6 +384,7 @@ int main(void)
     test_items();
     test_perks();
     test_everything_terminates();
+    test_bosses();
     test_predict();
     if (failures) {
         printf("%d failure(s)\n", failures);
