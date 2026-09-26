@@ -155,6 +155,8 @@ Result game_resolve(Game *g);           // after a launch: restock or lose a lif
 int game_shop_due(const Game *g);       // a shop comes before this round
 void game_roll_shop(Game *g);
 int game_buy(Game *g, int slot);        // 1 if bought
+// Buy with full hands: the item in `replace` is thrown away. 1 if bought.
+int game_buy_swap(Game *g, int slot, int replace);
 
 int game_perk_due(const Game *g);       // a perk choice comes before this round
 void game_roll_perks(Game *g);

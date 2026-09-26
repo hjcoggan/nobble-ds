@@ -36,6 +36,7 @@ static State state, paused_from;
 static Result last_result;
 static int frames, timer, menu_sel, aim, best_launch;
 static int inv_sel;                // which owned item or perk the pause screen shows
+static int swap_for = -1;          // shop slot being bought with full hands, -1 if not swapping
 static int credits_scroll, credits_rows;
 static int32_t shown[NUM_SLOTS];  // value currently drawn on each peg sprite
 static uint32_t seed = 0x5EED1234;
@@ -173,6 +174,10 @@ static void draw_objects(void)
 {
     for (int i = 0; i < 128; i++) hide_obj(i);
 
+    if (state == ST_SHOP && swap_for >= 0) {
+        for (int i = 0; i < game.nitems; i++) icon_obj(OBJ_ICON + i, game.items[i], 24, 36 + i * 16, 0, 0);
+        return;
+    }
     if (state == ST_SHOP) {
         for (int s = 0; s < SHOP_SLOTS; s++)
             if (game.shop[s] >= 0) icon_obj(OBJ_ICON + s, game.shop[s], 24, 36 + s * 24, 0, 0);
@@ -212,9 +217,9 @@ static void draw_objects(void)
                     TILE_DOT | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
     }
 
-    // items in numbered slots on the right, perks on the left; both flash when they fire
+    // items stacked on the right, perks on the left; both flash when they fire
     for (int i = 0; i < game.nitems; i++)
-        icon_obj(OBJ_ICON + i, game.items[i], 214, 32 + i * 16, 1, game.item_flash[i] & 4);
+        icon_obj(OBJ_ICON + i, game.items[i], 214, 41 + i * 15, 1, game.item_flash[i] & 4);
     for (int p = 0; p < game.nperks; p++)
         perk_obj(OBJ_PERK + p, game.perks[p], 2 + (p % 2) * 18, 112 + (p / 2) * 18, 1, game.perk_flash[p] & 4);
 
@@ -300,9 +305,11 @@ static void draw_hud(void)
     text_at(25, 1, "COINS");
     num_right(25, 2, game.coins, 5);
     text_at(25, 3, "ITEMS");
-    for (int s = 0; s < MAX_ITEMS; s++) {
-        char n[2] = { (char)('1' + s), 0 };
-        text_style(25, 4 + s * 2, n, TXT_GOLD);
+    if (game.nitems >= MAX_ITEMS) {
+        text_style(25, 4, " FULL", TXT_GOLD);
+    } else {
+        char n[6] = { ' ', ' ', (char)('0' + game.nitems), '/', (char)('0' + MAX_ITEMS), 0 };
+        text_at(25, 4, n);
     }
     int until = SHOP_EVERY - (game.round - 1) % SHOP_EVERY;
     text_at(25, 15, "SHOP");
@@ -558,6 +565,25 @@ static void finish_launch(void)
 
 // ---------------------------------------------------------------- shop
 
+// Hands full: pick which owned item the new one replaces.
+static void draw_swap(void)
+{
+    char buf[32];
+    panel(1, 28, 18);
+    text_center(2, "YOUR ITEMS ARE FULL", TXT_HILITE);
+    put_str(put_str(buf, "SWAP ONE FOR "), item_info[game.shop[swap_for]].name);
+    text_center(3, buf, TXT_PANEL);
+    for (int i = 0; i < game.nitems; i++) {
+        int on = i == menu_sel, row = 5 + i * 2;
+        text_style(2, row, on ? ">" : " ", on ? TXT_HILITE : TXT_PANEL);
+        text_style(6, row, item_info[game.items[i]].name, on ? TXT_HILITE : TXT_PANEL);
+    }
+    const ItemInfo *it = &item_info[game.items[menu_sel]];
+    text_center(15, trigger_text[it->trigger], TXT_PANEL);
+    text_center(16, it->effect, TXT_PANEL);
+    text_center(17, "A SWAP   B KEEP THEM", TXT_PANEL);
+}
+
 static void draw_shop(void)
 {
     char buf[32], *p;
@@ -565,10 +591,14 @@ static void draw_shop(void)
     text_center(2, "SHOP", TXT_HILITE);
     p = put_str(buf, "COINS ");
     p = put_num(p, game.coins);
-    p = put_str(p, "   ITEMS ");
-    p = put_num(p, game.nitems);
-    p = put_str(p, " OF ");
-    put_num(p, MAX_ITEMS);
+    if (game.nitems >= MAX_ITEMS) {
+        put_str(p, "   ITEMS FULL");
+    } else {
+        p = put_str(p, "   ITEMS ");
+        p = put_num(p, game.nitems);
+        p = put_str(p, "/");
+        put_num(p, MAX_ITEMS);
+    }
     text_center(3, buf, TXT_HILITE);
     for (int s = 0; s <= SHOP_SLOTS; s++) {
         int row = 5 + s * 3;
@@ -614,10 +644,31 @@ static void open_shop(void)
 
 static void update_shop(uint16_t pressed)
 {
+    if (swap_for >= 0) {
+        if (menu_move(pressed, game.nitems)) draw_swap();
+        if (pressed & (KEY_A | KEY_B)) {
+            if (pressed & KEY_A) {
+                game_buy_swap(&game, swap_for, menu_sel);
+                sfx_buy();
+            }
+            menu_sel = swap_for;
+            swap_for = -1;
+            draw_shop();
+        }
+        return;
+    }
     if (menu_move(pressed, SHOP_SLOTS + 1)) draw_shop();
     if (!(pressed & KEY_A)) return;
     if (menu_sel == SHOP_SLOTS) {
         show_board();
+        return;
+    }
+    int item = game.shop[menu_sel];
+    if (item >= 0 && game.nitems >= MAX_ITEMS && game.coins >= item_info[item].price) {
+        swap_for = menu_sel;                  // hands full: choose what to let go of
+        menu_sel = 0;
+        sfx_move();
+        draw_swap();
         return;
     }
     if (game_buy(&game, menu_sel)) sfx_buy();

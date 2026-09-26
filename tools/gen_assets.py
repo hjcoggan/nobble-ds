@@ -269,7 +269,7 @@ def pal16(cols):
 
 
 # ---------------------------------------------------------------- font
-FONT_CHARS = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.',%"
+FONT_CHARS = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.',%/"
 GLYPHS = {
     "0": ".###. #...# #..## #.#.# ##..# #...# .###.",
     "1": "..#.. .##.. ..#.. ..#.. ..#.. ..#.. .###.",
@@ -317,6 +317,7 @@ GLYPHS = {
     "'": "..#.. ..#.. .#... ..... ..... ..... .....",
     ",": "..... ..... ..... ..... ..... ..#.. .#...",
     "%": "##..# ##.#. ...#. ..#.. .#... .#.## #..##",
+    "/": "....# ...#. ...#. ..#.. .#... .#... #....",
 }
 # styles: plain, on a panel, highlighted on a panel, gold (no panel)
 FONT_STYLES = [(1, 2, 0), (1, 2, 3), (6, 2, 3), (6, 2, 0)]
@@ -955,10 +956,9 @@ def board_preview(n):
     text(img, 25, 2, "    7")
     text(img, 25, 3, "ITEMS")
     icon_pal = [(0, 0, 0)] + ICON_PAL[1:]
-    for i in range(5):
-        text(img, 25, 4 + i * 2, str(i + 1), FONT_PAL[6])
+    text(img, 25, 4, "  4/5")
     for i, it in enumerate((2, 3, 5, 7)):
-        blit(img, icon_sprite(*ICONS[it]), 214, 32 + i * 16, icon_pal)
+        blit(img, icon_sprite(*ICONS[it]), 214, 41 + i * 15, icon_pal)
     text(img, 25, 15, "SHOP")
     text(img, 25, 16, "IN  2")
     text(img, 0, 13, "PERKS")

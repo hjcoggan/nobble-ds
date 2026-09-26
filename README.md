@@ -29,7 +29,8 @@ and pop the numbered pegs to hit each round's quota in a single launch.
   restores a life. New pegs get bigger every 4 rounds, and quotas rise.
 - Pop every peg on the board for a **perfect**: the launch scores double.
 - Every 3 rounds there's a shop. You can hold up to **5 items**, and each
-  one fires on its own trigger:
+  one fires on its own trigger. With all 5, buying another lets you swap out
+  one you already have:
 
 | Item | Trigger | Effect | Cost |
 | --- | --- | --- | --- |

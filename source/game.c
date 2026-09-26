@@ -523,10 +523,25 @@ void game_roll_shop(Game *g)
 
 int game_buy(Game *g, int slot)
 {
+    return game_buy_swap(g, slot, -1);
+}
+
+int game_buy_swap(Game *g, int slot, int replace)
+{
     int item = g->shop[slot];
-    if (item < 0 || g->nitems >= MAX_ITEMS || g->coins < item_info[item].price) return 0;
+    if (item < 0 || g->coins < item_info[item].price) return 0;
+    if (replace < 0 ? g->nitems >= MAX_ITEMS : replace >= g->nitems) return 0;
     g->coins -= item_info[item].price;
-    g->items[g->nitems++] = (uint8_t)item;
+    if (replace < 0) {
+        g->items[g->nitems++] = (uint8_t)item;
+    } else {
+        if (g->items[replace] == ITEM_HEART) {      // its extra life goes with it
+            g->max_lives--;
+            if (g->lives > g->max_lives) g->lives = g->max_lives;
+        }
+        g->items[replace] = (uint8_t)item;
+        g->item_flash[replace] = 0;
+    }
     g->shop[slot] = -1;
     if (item == ITEM_HEART) {
         g->max_lives++;

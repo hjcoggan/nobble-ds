@@ -4,9 +4,9 @@
 
 #include <stdint.h>
 
-#define FONT_CHARS " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.\',%"
-#define FONT_NCHARS 47
-#define FRAME_TILE 188
+#define FONT_CHARS " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.\',%/"
+#define FONT_NCHARS 48
+#define FRAME_TILE 192
 #define NUM_BOARDS 3
 #define BG_FIRST_COLOR 32
 #define BG_IMG_WORDS 9600
@@ -35,6 +35,6 @@ extern const uint32_t title_tiles[BG_IMG_WORDS];
 extern const uint16_t *const board_pal[NUM_BOARDS];
 extern const uint32_t *const board_tiles[NUM_BOARDS];
 extern const uint32_t obj_tiles[728];
-extern const uint32_t font_tiles[1568];
+extern const uint32_t font_tiles[1600];
 
 #endif

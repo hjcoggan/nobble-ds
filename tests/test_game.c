@@ -166,6 +166,18 @@ static void test_shop(void)
     CHECK(g.nitems == MAX_ITEMS && bought == MAX_ITEMS - 1);
     game_roll_shop(&g);
     CHECK(!game_buy(&g, 0));                  // no room for a sixth item
+    int wanted = g.shop[0], coins = g.coins;
+    CHECK(game_buy_swap(&g, 0, 2));           // ...but it can replace one
+    CHECK(g.nitems == MAX_ITEMS && g.items[2] == wanted && g.shop[0] == -1);
+    CHECK(g.coins == coins - item_info[wanted].price);
+
+    game_new_run(&g, 12);                     // swapping a heart away takes its life
+    g.coins = 100;
+    g.shop[0] = ITEM_HEART;
+    game_buy(&g, 0);
+    g.shop[0] = ITEM_PUMP;
+    CHECK(game_buy_swap(&g, 0, 0));
+    CHECK(g.max_lives == START_LIVES && g.lives == START_LIVES);
 
     game_new_run(&g, 8);
     g.coins = 100;
