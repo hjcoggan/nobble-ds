@@ -7,9 +7,9 @@
 // fill up and matching numbers merge into bigger ones. Miss it and you lose
 // a life and the board resets for another try.
 //
-// Items sit in numbered slots and fire on a trigger (on launch, first pop,
-// wall bounce, ...). Perks force-trigger items, often by slot number, so the
-// order you buy items in matters.
+// Items fire on a trigger (on launch, first pop, wall bounce, ...). Perks
+// force-trigger items: all of them, or ones picked at random, so the order
+// you buy items in never matters.
 #ifndef GAME_H
 #define GAME_H
 
@@ -73,11 +73,11 @@ enum {
 enum {
     PERK_CHEESY,    // every 3 seconds in flight: trigger all items
     PERK_CHAOTIC,   // every second in flight: trigger a random item
-    PERK_WAFFLE,    // first pop: trigger slots 1, 3 and 5
-    PERK_KEBAB,     // Nubby dies: 50% chance to trigger the last item
-    PERK_SPRINGY,   // wall bounce: 1 in 4 chance to trigger slot 5
-    PERK_TROPHY,    // passing the goal: trigger slot 3 three times
-    PERK_BUCKSHOT,  // first pop on the biggest peg: slots 1 and 2 twice
+    PERK_WAFFLE,    // first pop: trigger 2 random items
+    PERK_KEBAB,     // Nubby dies: 50% chance to trigger a random item
+    PERK_SPRINGY,   // wall bounce: 1 in 4 chance to trigger a random item
+    PERK_TROPHY,    // passing the goal: trigger all items
+    PERK_BUCKSHOT,  // first pop on the biggest peg: 3 random items
     PERK_HOUSE,     // 15 pegs popped: trigger all items
     NUM_PERKS
 };

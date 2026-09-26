@@ -530,15 +530,15 @@ static void finish_launch(void)
         text_center(10, buf, TXT_PANEL);
         p = put_str(buf, "+");
         p = put_num(p, game.restocks);
-        put_str(p, " COINS");
-        text_center(11, buf, TXT_GOLD);
+        put_str(p, game.restocks == 1 ? " COIN" : " COINS");
+        text_center(12, buf, TXT_HILITE);
     } else {
         sfx_deny();
         text_center(6, "MISSED!", TXT_HILITE);
         p = put_num(buf, game.lives);
         put_str(p, game.lives == 1 ? " LIFE LEFT" : " LIVES LEFT");
         text_center(10, buf, TXT_PANEL);
-        text_center(11, "THE BOARD RESETS", TXT_PANEL);
+        text_center(12, "THE BOARD RESETS", TXT_PANEL);
     }
     state = ST_RESULT;
     timer = RESULT_FRAMES;
@@ -557,7 +557,7 @@ static void draw_shop(void)
     p = put_num(p, game.nitems);
     p = put_str(p, " OF ");
     put_num(p, MAX_ITEMS);
-    text_center(3, buf, TXT_GOLD);
+    text_center(3, buf, TXT_HILITE);
     for (int s = 0; s <= SHOP_SLOTS; s++) {
         int row = 5 + s * 3;
         int on = s == menu_sel;

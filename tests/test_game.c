@@ -233,26 +233,26 @@ static void test_items(void)
 
 static void test_perks(void)
 {
-    // waffle: first pop triggers slots 1, 3 and 5
-    Game g = board_with(6, ITEM_DOUBLER);
-    g.items[g.nitems++] = ITEM_PIGGY;
-    g.items[g.nitems++] = ITEM_PUMP;
+    // waffle: first pop triggers 2 random items. Pump normally fires on
+    // launch only, so its flash after the first pop comes from the perk.
+    Game g = board_with(6, ITEM_PUMP);
     g.perks[g.nperks++] = PERK_WAFFLE;
-    first_pop(&g);
-    CHECK(g.item_flash[0] && g.item_flash[2] && !g.item_flash[1]);
-    CHECK(g.perk_flash[0]);
+    game_launch(&g, 0);
+    g.item_flash[0] = 0;
+    Events ev;
+    while (!game_step(&g, &ev) && g.hits == 0) {}
+    CHECK(g.item_flash[0] && g.perk_flash[0]);
 
-    // trophy: passing the goal triggers slot 3 three times. Encore normally
-    // waits for Nubby to fall out, so a flash right after the first pop
-    // can only have come from the perk.
-    g = board_with(7, ITEM_SEEDER);
-    g.items[g.nitems++] = ITEM_PIGGY;
+    // trophy: passing the goal triggers every item. Encore normally waits
+    // for Nubby to fall out, so extra score right after the first pop can
+    // only have come from the perk.
+    g = board_with(7, ITEM_PIGGY);
     g.items[g.nitems++] = ITEM_ENCORE;
     g.perks[g.nperks++] = PERK_TROPHY;
     g.quota = 1;
     first_pop(&g);
     CHECK(g.passed_goal);
-    CHECK(g.item_flash[2]);
+    CHECK(g.item_flash[0] && g.item_flash[1]);
     CHECK(g.score > 2);                          // encore added to the 2 points
 
     game_new_run(&g, 9);

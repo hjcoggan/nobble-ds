@@ -28,9 +28,8 @@ and pop the numbered pegs to hit each round's quota in a single launch.
   new value merge and double. Each restock pays a coin, and clearing a round
   restores a life. New pegs get bigger every 4 rounds, and quotas rise.
 - Pop every peg on the board for a **perfect**: the launch scores double.
-- Every 3 rounds there's a shop. Items go into **5 numbered slots** and each
-  one fires on a trigger. The slot order matters, because perks trigger items
-  by slot number:
+- Every 3 rounds there's a shop. You can hold up to **5 items**, and each
+  one fires on its own trigger:
 
 | Item | Trigger | Effect | Cost |
 | --- | --- | --- | --- |
@@ -53,11 +52,11 @@ and pop the numbered pegs to hit each round's quota in a single launch.
 | --- | --- | --- |
 | Cheesy | Every 3 seconds in flight | All items |
 | Chaotic | Every second in flight | A random item |
-| Waffle | First peg popped | Slots 1, 3 and 5 |
-| Kebab | Nubby falls out | 50% chance: the last item |
-| Springy | Wall bounce | 1 in 4 chance: slot 5 |
-| Trophy | Passing the goal | Slot 3, three times |
-| Buckshot | First pop is the biggest peg | Slots 1 and 2, twice each |
+| Waffle | First peg popped | 2 random items |
+| Kebab | Nubby falls out | 50% chance: a random item |
+| Springy | Wall bounce | 1 in 4 chance: a random item |
+| Trophy | Passing the goal | All items |
+| Buckshot | First pop is the biggest peg | 3 random items |
 | House of Cards | 15 pegs popped | All items |
 
 Your furthest round and best single launch are saved to cartridge SRAM (a

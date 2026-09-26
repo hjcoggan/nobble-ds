@@ -48,11 +48,11 @@ const ItemInfo item_info[NUM_ITEMS] = {
 const PerkInfo perk_info[NUM_PERKS] = {
     [PERK_CHEESY]   = { "CHEESY",   "EVERY 3 SECONDS:",      "TRIGGER ALL ITEMS" },
     [PERK_CHAOTIC]  = { "CHAOTIC",  "EVERY SECOND:",         "TRIGGER A RANDOM ITEM" },
-    [PERK_WAFFLE]   = { "WAFFLE",   "FIRST PEG POPPED:",     "TRIGGER SLOTS 1 3 5" },
-    [PERK_KEBAB]    = { "KEBAB",    "NUBBY FALLS OUT: 50%",  "TRIGGER THE LAST ITEM" },
-    [PERK_SPRINGY]  = { "SPRINGY",  "WALL BOUNCE: 1 IN 4",   "TRIGGER SLOT 5" },
-    [PERK_TROPHY]   = { "TROPHY",   "PASSING THE GOAL:",     "TRIGGER SLOT 3 X3" },
-    [PERK_BUCKSHOT] = { "BUCKSHOT", "FIRST POP IS THE TOP",  "PEG: SLOTS 1 2 TWICE" },
+    [PERK_WAFFLE]   = { "WAFFLE",   "FIRST PEG POPPED:",     "TRIGGER 2 RANDOM ITEMS" },
+    [PERK_KEBAB]    = { "KEBAB",    "NUBBY FALLS OUT: 50%",  "TRIGGER A RANDOM ITEM" },
+    [PERK_SPRINGY]  = { "SPRINGY",  "WALL BOUNCE: 1 IN 4",   "TRIGGER A RANDOM ITEM" },
+    [PERK_TROPHY]   = { "TROPHY",   "PASSING THE GOAL:",     "TRIGGER ALL ITEMS" },
+    [PERK_BUCKSHOT] = { "BUCKSHOT", "FIRST POP IS THE TOP",  "PEG: 3 RANDOM ITEMS" },
     [PERK_HOUSE]    = { "HOUSE",    "15 PEGS POPPED:",       "TRIGGER ALL ITEMS" },
 };
 
@@ -152,7 +152,7 @@ void game_new_run(Game *g, uint32_t seed)
 // ---------------------------------------------------------------- items and perks
 
 static void fire(Game *g, int trigger);
-static void trigger_slot(Game *g, int slot, int perk);
+static void trigger_all(Game *g, int perk);
 static void trigger_all(Game *g, int perk);
 
 static int pick_peg(Game *g, int want)   // want: 0 random, 1 lowest, 2 highest
@@ -181,8 +181,7 @@ static void check_goal(Game *g)
 {
     if (g->passed_goal || g->score < g->quota) return;
     g->passed_goal = 1;
-    if (game_has_perk(g, PERK_TROPHY))
-        for (int k = 0; k < 3; k++) trigger_slot(g, 2, PERK_TROPHY);
+    if (game_has_perk(g, PERK_TROPHY)) trigger_all(g, PERK_TROPHY);
 }
 
 // Score peg i and halve it. Returns 1 if it vanished.
@@ -277,10 +276,12 @@ static void flash_perk(Game *g, int perk)
         if (g->perks[p] == perk) g->perk_flash[p] = FLASH_FRAMES * 2;
 }
 
-static void trigger_slot(Game *g, int slot, int perk)
+// Fire n items picked at random (repeats allowed).
+static void trigger_random(Game *g, int n, int perk)
 {
+    if (!g->nitems) return;
     flash_perk(g, perk);
-    run_item(g, slot);
+    for (int k = 0; k < n; k++) run_item(g, rand_below(g, g->nitems));
 }
 
 static void trigger_all(Game *g, int perk)
@@ -366,17 +367,8 @@ static void hit_peg(Game *g, int i)
     pop_peg(g, i);
     if (!first) return;
     fire(g, TRIG_FIRST_POP);
-    if (game_has_perk(g, PERK_WAFFLE)) {
-        flash_perk(g, PERK_WAFFLE);
-        for (int s = 0; s < MAX_ITEMS; s += 2) run_item(g, s);
-    }
-    if (was_top && game_has_perk(g, PERK_BUCKSHOT)) {
-        flash_perk(g, PERK_BUCKSHOT);
-        for (int k = 0; k < 2; k++) {
-            run_item(g, 0);
-            run_item(g, 1);
-        }
-    }
+    if (game_has_perk(g, PERK_WAFFLE)) trigger_random(g, 2, PERK_WAFFLE);
+    if (was_top && game_has_perk(g, PERK_BUCKSHOT)) trigger_random(g, 3, PERK_BUCKSHOT);
 }
 
 // Walls and ceiling; returns 1 if Nubby bounced off a side wall.
@@ -423,7 +415,7 @@ static void substep(Game *g, Events *ev)
     if (walls(&g->x, &g->y, &g->vx, &g->vy, r)) {
         ev->wall = 1;
         fire(g, TRIG_WALL);
-        if (game_has_perk(g, PERK_SPRINGY) && rand_below(g, 4) == 0) trigger_slot(g, 4, PERK_SPRINGY);
+        if (game_has_perk(g, PERK_SPRINGY) && rand_below(g, 4) == 0) trigger_random(g, 1, PERK_SPRINGY);
     }
 
     for (int i = 0; i < NUM_SLOTS; i++)
@@ -448,8 +440,7 @@ int game_step(Game *g, Events *ev)
     g->frames++;
 
     if (game_has_perk(g, PERK_CHEESY) && g->frames % 180 == 0) trigger_all(g, PERK_CHEESY);
-    if (game_has_perk(g, PERK_CHAOTIC) && g->frames % 60 == 0 && g->nitems)
-        trigger_slot(g, rand_below(g, g->nitems), PERK_CHAOTIC);
+    if (game_has_perk(g, PERK_CHAOTIC) && g->frames % 60 == 0) trigger_random(g, 1, PERK_CHAOTIC);
 
     // if Nubby comes to rest on something, give it a shove
     int slow = g->vx < 40 && g->vx > -40 && g->vy < 40 && g->vy > -40;
@@ -463,8 +454,7 @@ int game_step(Game *g, Events *ev)
     int out = 0;
     if (g->y > FIX(EXIT_Y) || g->frames > LAUNCH_TIMEOUT) {
         fire(g, TRIG_DIES);
-        if (game_has_perk(g, PERK_KEBAB) && g->nitems && rand_below(g, 2) == 0)
-            trigger_slot(g, g->nitems - 1, PERK_KEBAB);
+        if (game_has_perk(g, PERK_KEBAB) && rand_below(g, 2) == 0) trigger_random(g, 1, PERK_KEBAB);
         // springs can pull Nubby back from the brink
         out = g->y > FIX(FLOOR_Y) || g->frames > LAUNCH_TIMEOUT;
         if (out) g->flying = 0;
