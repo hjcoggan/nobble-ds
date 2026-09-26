@@ -1105,7 +1105,7 @@ def save_scaled(name, img, k):
 
 os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
 title_rgb = to_rgb(title_pal, title_idx)
-text(title_rgb, 9, 15, "PRESS START")
+text(title_rgb, 9, 13, "PRESS START")
 for x in range(8, 232):                 # the best-score strip drawn in game
     for y in range(136, 160):
         title_rgb[y][x] = FONT_PAL[3] if 8 < x < 231 and 136 < y < 159 else FONT_PAL[4]

@@ -938,11 +938,11 @@ static void update_pause(uint16_t pressed)
 static void update_title(uint16_t pressed)
 {
     if (state == ST_TITLE) {
-        text_center(15, (frames & 32) ? "           " : "PRESS START", TXT_PLAIN);
+        text_center(13, (frames & 32) ? "           " : "PRESS START", TXT_PLAIN);
         if (pressed & (KEY_START | KEY_A)) {
             state = ST_MENU;
             menu_sel = MAIN_PLAY;
-            text_center(15, "           ", TXT_PLAIN);
+            text_center(13, "           ", TXT_PLAIN);
             draw_main_menu();
         }
         return;
