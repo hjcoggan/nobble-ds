@@ -59,6 +59,9 @@ and pop the numbered pegs to hit each round's quota in a single launch.
 | Buckshot | First pop is the biggest peg | 3 random items |
 | House of Cards | 15 pegs popped | All items |
 
+Press **Start** to pause. **Items and perks** in the pause menu lets you flick
+through everything you own (left and right) to check what each one does.
+
 Your furthest round and best single launch are saved to cartridge SRAM (a
 `.sav` file in emulators).
 

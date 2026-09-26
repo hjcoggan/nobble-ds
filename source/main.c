@@ -24,17 +24,18 @@
 
 typedef enum {
     ST_TITLE, ST_MENU, ST_HOWTO, ST_CREDITS,
-    ST_AIM, ST_FLY, ST_RESULT, ST_PERK, ST_SHOP, ST_PAUSE, ST_OVER,
+    ST_AIM, ST_FLY, ST_RESULT, ST_PERK, ST_SHOP, ST_PAUSE, ST_INVENTORY, ST_OVER,
 } State;
 
 enum { MAIN_PLAY, MAIN_HOWTO, MAIN_CREDITS, MAIN_COUNT };
-enum { PAUSE_RESUME, PAUSE_QUIT, PAUSE_COUNT };
+enum { PAUSE_RESUME, PAUSE_INVENTORY, PAUSE_QUIT, PAUSE_COUNT };
 
 static uint16_t oam[128 * 4];
 static Game game;
 static State state, paused_from;
 static Result last_result;
 static int frames, timer, menu_sel, aim, best_launch;
+static int inv_sel;                // which owned item or perk the pause screen shows
 static int credits_scroll, credits_rows;
 static int32_t shown[NUM_SLOTS];  // value currently drawn on each peg sprite
 static uint32_t seed = 0x5EED1234;
@@ -181,6 +182,16 @@ static void draw_objects(void)
         for (int c = 0; c < PERK_CHOICES; c++) perk_obj(OBJ_ICON + c, game.perk_offer[c], 24, 44 + c * 40, 0, 0);
         return;
     }
+    if (state == ST_INVENTORY) {
+        // everything owned in a row; the one being read is lit and raised
+        int n = game.nitems + game.nperks, x = 120 - n * 9;
+        for (int k = 0; k < n; k++, x += 18) {
+            int y = k == inv_sel ? 44 : 48;
+            if (k < game.nitems) icon_obj(OBJ_ICON + k, game.items[k], x, y, 0, k == inv_sel);
+            else perk_obj(OBJ_ICON + k, game.perks[k - game.nitems], x, y, 0, k == inv_sel);
+        }
+        return;
+    }
     if (!on_board()) return;
 
     int blink = (frames % 180) < 8;
@@ -318,7 +329,7 @@ static void record_run(void)
 // ---------------------------------------------------------------- title, menus, credits
 
 static const char *const main_items[MAIN_COUNT] = { "PLAY", "HOW TO PLAY", "CREDITS" };
-static const char *const pause_items[PAUSE_COUNT] = { "RESUME", "QUIT" };
+static const char *const pause_items[PAUSE_COUNT] = { "RESUME", "ITEMS AND PERKS", "QUIT" };
 
 static void draw_title_text(void)
 {
@@ -333,7 +344,7 @@ static void draw_title_text(void)
 }
 
 static void draw_main_menu(void) { menu_draw(9, 16, 0, main_items, MAIN_COUNT, menu_sel); }
-static void draw_pause_menu(void) { menu_draw(6, 14, "PAUSED", pause_items, PAUSE_COUNT, menu_sel); }
+static void draw_pause_menu(void) { menu_draw(6, 20, "PAUSED", pause_items, PAUSE_COUNT, menu_sel); }
 
 static int menu_move(uint16_t pressed, int n)
 {
@@ -719,6 +730,76 @@ static void update_result(void)
     }
 }
 
+// ---------------------------------------------------------------- items and perks (from pause)
+
+static void draw_inventory(void)
+{
+    char buf[32], *p;
+    text_clear();
+    panel(2, 28, 16);
+    text_center(3, "ITEMS AND PERKS", TXT_HILITE);
+    int n = game.nitems + game.nperks;
+    if (!n) {
+        text_center(8, "NOTHING YET!", TXT_PANEL);
+        text_center(10, "BUY ITEMS IN THE SHOP", TXT_PANEL);
+        text_center(11, "AND PICK A PERK EVERY", TXT_PANEL);
+        text_center(12, "5 ROUNDS", TXT_PANEL);
+    } else if (inv_sel < game.nitems) {
+        const ItemInfo *it = &item_info[game.items[inv_sel]];
+        p = put_str(buf, "ITEM ");
+        p = put_num(p, inv_sel + 1);
+        p = put_str(p, " OF ");
+        put_num(p, game.nitems);
+        text_center(4, buf, TXT_PANEL);
+        text_center(9, it->name, TXT_HILITE);
+        text_center(11, trigger_text[it->trigger], TXT_PANEL);
+        text_center(12, it->effect, TXT_PANEL);
+    } else {
+        const PerkInfo *pk = &perk_info[game.perks[inv_sel - game.nitems]];
+        p = put_str(buf, "PERK ");
+        p = put_num(p, inv_sel - game.nitems + 1);
+        p = put_str(p, " OF ");
+        put_num(p, game.nperks);
+        text_center(4, buf, TXT_PANEL);
+        text_center(9, pk->name, TXT_HILITE);
+        text_center(11, pk->line1, TXT_PANEL);
+        text_center(12, pk->line2, TXT_PANEL);
+    }
+    if (n > 1) text_center(15, "LEFT AND RIGHT TO BROWSE", TXT_PANEL);
+    text_center(16, "B TO GO BACK", TXT_PANEL);
+}
+
+static void open_inventory(void)
+{
+    state = ST_INVENTORY;
+    inv_sel = 0;
+    REG_BLDCNT = BLD_DARKEN | BLD_BG0;      // icons stay bright over the darkened board
+    REG_BLDY = 12;
+    draw_inventory();
+}
+
+static void update_inventory(uint16_t pressed)
+{
+    int n = game.nitems + game.nperks;
+    if (n > 1 && (pressed & (KEY_LEFT | KEY_UP | KEY_L))) {
+        inv_sel = (inv_sel + n - 1) % n;
+        sfx_move();
+        draw_inventory();
+    }
+    if (n > 1 && (pressed & (KEY_RIGHT | KEY_DOWN | KEY_R))) {
+        inv_sel = (inv_sel + 1) % n;
+        sfx_move();
+        draw_inventory();
+    }
+    if (pressed & (KEY_B | KEY_START | KEY_A)) {
+        state = ST_PAUSE;
+        dim(1, PAUSE_DIM);
+        text_clear();
+        draw_hud();
+        draw_pause_menu();
+    }
+}
+
 static void update_pause(uint16_t pressed)
 {
     if (menu_move(pressed, PAUSE_COUNT)) draw_pause_menu();
@@ -729,6 +810,8 @@ static void update_pause(uint16_t pressed)
         draw_hud();
         state = paused_from;
         music_resume();
+    } else if ((pressed & (KEY_A | KEY_START)) && menu_sel == PAUSE_INVENTORY) {
+        open_inventory();
     } else if ((pressed & (KEY_A | KEY_START)) && menu_sel == PAUSE_QUIT) {
         record_run();
         go_title();
@@ -808,6 +891,9 @@ int main(void)
             break;
         case ST_PAUSE:
             update_pause(pressed);
+            break;
+        case ST_INVENTORY:
+            update_inventory(pressed);
             break;
         case ST_OVER:
             if (pressed & KEY_START) go_title();
