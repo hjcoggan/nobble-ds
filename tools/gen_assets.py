@@ -511,12 +511,6 @@ def render_board(t, seed):
     launcher(cv, (170, 176, 190))
     slot_rings(cv, t["board"])
     shredder(cv)
-    # little gauges on the side panels
-    for gx, gy in ((20, 150), (220, 150)):
-        disc(cv, gx, gy, 6, (230, 226, 210))
-        disc(cv, gx, gy, 6.5, lambda x, y, d: (40, 36, 40) if d > 5.3 else None)
-        for k in range(5):
-            cv.put(gx - 3 + k, gy - 1 + abs(k - 2) // 2, (200, 40, 40) if k == 4 else (40, 36, 40))
     return cv
 
 
@@ -559,39 +553,133 @@ def draw_big_nubby(cv, cx, cy, r):
         cv.put(int(x), int(y), INK)
 
 
+# 3x5 digits drawn onto pegs in game (must match digits3x5 in source/main.c)
+DIGITS3 = [r.split() for r in [
+    "### #.# #.# #.# ###", ".#. ##. .#. .#. ###", "### ..# ### #.. ###", "### ..# ### ..# ###",
+    "#.# #.# ### ..# ..#", "### #.. ### ..# ###", "### #.. ### #.# ###", "### ..# ..# .#. .#.",
+    "### #.# ### #.# ###", "### #.# ### ..# ###"]]
+
+
+def bubble_mask(text, glyphs, cell, gap, top, bounce):
+    """Chunky rounded letters: every filled glyph cell becomes a blob."""
+    gw = len(glyphs[text[0]][0])
+    width = len(text) * gw * cell + (len(text) - 1) * gap * cell
+    x0 = (W - width) // 2
+    field = [[0.0] * W for _ in range(H)]
+    sig = cell * 0.62
+    for i, ch in enumerate(text):
+        lx = x0 + i * (gw + gap) * cell
+        ly = top + bounce[i]
+        for gy, row in enumerate(glyphs[ch]):
+            for gx, p in enumerate(row):
+                if p != "#":
+                    continue
+                cx, cy = lx + (gx + 0.5) * cell, ly + (gy + 0.5) * cell
+                for y in range(int(cy - 3 * sig), int(cy + 3 * sig) + 1):
+                    for x in range(int(cx - 3 * sig), int(cx + 3 * sig) + 1):
+                        if 0 <= x < W and 0 <= y < H:
+                            d2 = ((x + 0.5 - cx) ** 2 + (y + 0.5 - cy) ** 2) / (sig * sig)
+                            field[y][x] += math.exp(-d2)
+    m = [[field[y][x] > 0.55 for x in range(W)] for y in range(H)]
+    return m
+
+
+def bubble_text(cv, m, depth, face_top, face_bot, gloss, side, outline):
+    """Glossy 3D letters like the Nubby's Number Factory logo."""
+    def at(x, y):
+        return 0 <= x < W and 0 <= y < H and m[y][x]
+
+    def solid(x, y):
+        return any(at(x - k, y - k) for k in range(depth + 1))
+    ys = [y for y in range(H) if any(m[y])]
+    y0, y1 = min(ys), max(ys)
+    for y in range(H):                          # soft shadow on the sky
+        for x in range(W):
+            if not solid(x, y) and solid(x - 4, y - 5):
+                cv.shade(x, y, 0.62)
+    for y in range(H):
+        for x in range(W):
+            if solid(x, y):
+                continue
+            if any(solid(x + dx, y + dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)):
+                cv.put(x, y, outline)
+    for y in range(H):
+        for x in range(W):
+            if at(x, y):
+                t = (y - y0) / max(1, y1 - y0)
+                c = mix(face_top, face_bot, t)
+                if not at(x - 1, y - 1) or not at(x, y - 1):
+                    c = mix(c, (255, 255, 255), 0.55)       # lit rim
+                elif not at(x, y - 3) and at(x, y + 2):
+                    c = mix(c, gloss, 0.7)                  # glossy band near the top
+                elif not at(x + 1, y + 1):
+                    c = scale(c, 0.75)
+                cv.put(x, y, c)
+            elif solid(x, y):
+                k = next(k for k in range(1, depth + 1) if at(x - k, y - k))
+                cv.put(x, y, scale(side, 1.1 - 0.12 * k))
+
+
+def glossy_ball(cv, cx, cy, r, col, label=None):
+    """A shiny numbered ball, like the ones bouncing around the Nubby's logo."""
+    disc(cv, cx + r * 0.25, cy + r * 0.3, r, lambda x, y, d: scale(cv.get(x, y), 0.6)
+         if 0 <= x < W and 0 <= y < H else None)
+
+    def shade(x, y, d):
+        dx, dy = (x + 0.5 - cx) / r, (y + 0.5 - cy) / r
+        if d > r - 1:
+            return scale(col, 0.35)
+        lit = -(dx * LIGHT[0] + dy * LIGHT[1])
+        c = scale(col, 0.72 + 0.4 * lit)
+        if math.hypot(dx + 0.38, dy + 0.42) < 0.2:
+            c = (255, 255, 255)
+        elif math.hypot(dx + 0.34, dy + 0.38) < 0.32:
+            c = mix(c, (255, 255, 255), 0.5)
+        return c
+    disc(cv, cx, cy, r, shade)
+    if label is None:
+        return
+    disc(cv, cx, cy + r * 0.05, r * 0.55, lambda x, y, d: (250, 250, 244) if d < r * 0.55 - 1 else scale(col, 0.4))
+    if r >= 14:                                     # big ball: 5x7 digits, doubled
+        glyphs, gw, cell = {ch: GLYPHS[ch].split() for ch in label}, 5, 2
+    else:                                           # small ball: 3x5 digits
+        glyphs, gw, cell = {ch: DIGITS3[int(ch)] for ch in label}, 3, 1
+    gh = len(next(iter(glyphs.values())))
+    w = (len(label) * (gw + 1) - 1) * cell
+    lx, ly = int(cx - w / 2 + 0.5), int(cy + r * 0.05 - gh * cell / 2 + 0.5)
+    for i, ch in enumerate(label):
+        for gy, row in enumerate(glyphs[ch]):
+            for gx, p in enumerate(row):
+                if p == "#":
+                    for yy in range(cell):
+                        for xx in range(cell):
+                            cv.put(lx + (i * (gw + 1) + gx) * cell + xx, ly + gy * cell + yy, INK)
+
+
 def render_title():
     cv = Canvas()
 
-    def wall(x, y):
-        n = 0.85 + 0.25 * fbm(x / 10, y / 10, 71, 3)
-        vx, vy = (x - 120) / 150, (y - 70) / 120
-        v = max(0.3, 1 - (vx * vx + vy * vy) * 1.2)
-        return scale((58, 66, 92), n * v)
-    cv.each(lambda x, y, c: wall(x, y))
-    gear(cv, 18, 26, 22, 10, (90, 96, 118))
-    gear(cv, 226, 120, 26, 12, (90, 96, 118))
-    gear(cv, 200, 22, 12, 8, (110, 116, 140))
-    pipe(cv, 94, 0, 70, (150, 156, 170))
-    pipe(cv, 70, 176, 240, (150, 156, 170))
-    # a few pegs and falling numbers for flavour
-    for (px, py, col) in ((52, 120, (230, 230, 240)), (68, 108, (190, 90, 230)), (172, 104, (240, 196, 60)),
-                          (188, 122, (230, 230, 240)), (40, 104, (230, 230, 240)), (200, 100, (80, 200, 240))):
-        disc(cv, px, py, 4 if col != (80, 200, 240) else 6, lambda x, y, d, c=col: scale(c, 1.1 - d / 8))
-    carved_text(cv, "NUBBY", LOGO, 5, 1, 10,
-                face_top=(255, 236, 120), face_bot=(250, 130, 60),
-                edge_lt=(255, 252, 210), edge_dk=(150, 60, 20), outline=INK, band=False)
-    carved_text(cv, "GBA", SMALL_GLYPHS, 2, 1, 58,
-                face_top=(150, 230, 255), face_bot=(60, 150, 230), edge_lt=(230, 250, 255),
-                edge_dk=(20, 70, 140), outline=INK, band=False)
-    draw_big_nubby(cv, 120, 100, 20)
-    # conveyor belt
-    for y in range(148, H):
-        for x in range(W):
-            c = (70, 66, 72) if ((x + y) // 3) % 2 else (46, 42, 50)
-            if y == 148:
-                c = (150, 150, 160)
-            cv.put(x, y, c)
-    hazard(cv, 0, W, 146, 148)
+    def sky(x, y):
+        t = y / H
+        c = mix((36, 96, 214), (150, 214, 252), t)
+        n = fbm(x / 34, y / 14, 17, 4) + 0.35 * fbm(x / 9, y / 7, 23, 2) - 0.25 * (1 - t)
+        if n > 0.62:                                     # fluffy clouds
+            k = min(1.0, (n - 0.62) / 0.14)
+            cloud = mix((196, 214, 240), (255, 255, 255), min(1.0, max(0.0, (0.95 - t) * 1.2)))
+            c = mix(c, scale(cloud, 0.93 + 0.07 * fbm(x / 4, y / 4, 5, 2)), k)
+        return c
+    cv.each(lambda x, y, c: sky(x, y))
+
+    red = dict(face_top=(255, 96, 80), face_bot=(196, 18, 30), gloss=(255, 206, 196),
+               side=(120, 8, 22), outline=(56, 0, 12))
+    bubble_text(cv, bubble_mask("NUBBY", LOGO, 5, 1, 5, [3, 0, 2, -1, 1]), 4, **red)
+    bubble_text(cv, bubble_mask("GBA", SMALL_GLYPHS, 3, 1, 50, [0, 1, 0]), 3, **red)
+
+    draw_big_nubby(cv, 30, 104, 19)
+    glossy_ball(cv, 206, 98, 16, (60, 190, 80), "8")
+    glossy_ball(cv, 188, 136, 10, (250, 130, 40), "2")
+    glossy_ball(cv, 224, 138, 9, (60, 140, 240), "16")
+    glossy_ball(cv, 60, 138, 9, (190, 90, 230), "4")
     return cv
 
 
@@ -867,8 +955,9 @@ def board_preview(n):
     text(img, 25, 2, "    7")
     text(img, 25, 3, "ITEMS")
     icon_pal = [(0, 0, 0)] + ICON_PAL[1:]
-    for i, it in enumerate((2, 3, 5, 7)):
+    for i in range(5):
         text(img, 25, 4 + i * 2, str(i + 1), FONT_PAL[6])
+    for i, it in enumerate((2, 3, 5, 7)):
         blit(img, icon_sprite(*ICONS[it]), 214, 32 + i * 16, icon_pal)
     text(img, 25, 15, "SHOP")
     text(img, 25, 16, "IN  2")
@@ -876,13 +965,6 @@ def board_preview(n):
     for i, pk in enumerate((0, 5)):
         blit(img, icon_sprite(*PERK_ICONS[pk], True), 2 + (i % 2) * 18, 112 + (i // 2) * 18, icon_pal)
     return img
-
-
-# 3x5 digits drawn onto pegs in game (must match digits3x5 in source/main.c)
-DIGITS3 = [r.split() for r in [
-    "### #.# #.# #.# ###", ".#. ##. .#. .#. ###", "### ..# ### #.. ###", "### ..# ### ..# ###",
-    "#.# #.# ### ..# ..#", "### #.. ### ..# ###", "### #.. ### #.# ###", "### ..# ..# .#. .#.",
-    "### #.# ### #.# ###", "### #.# ### ..# ###"]]
 
 
 def save_scaled(name, img, k):
