@@ -4,9 +4,9 @@
 
 #include <stdint.h>
 
-#define FONT_CHARS " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.\',"
-#define FONT_NCHARS 46
-#define FRAME_TILE 184
+#define FONT_CHARS " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.\',%"
+#define FONT_NCHARS 47
+#define FRAME_TILE 188
 #define NUM_BOARDS 3
 #define BG_FIRST_COLOR 32
 #define BG_IMG_WORDS 9600
@@ -19,20 +19,22 @@
 #define TILE_PEG 10           // 16x16 disc template (4 tiles)
 #define TILE_DOT 14
 #define TILE_ICON(i) (15 + (i) * 4)
-#define TILE_FREE 47        // first unused sprite tile
+#define TILE_PERK(i) (59 + (i) * 4)
+#define TILE_FREE 91        // first unused sprite tile
 #define PAL_NUBBY 0
 #define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
 #define NUM_TIERS 9
 #define PAL_FLASH 10
 #define PAL_ICON 11
+#define PAL_ICON_FLASH 12
 
 extern const uint16_t font_pal[16];
-extern const uint16_t obj_pal[192];
+extern const uint16_t obj_pal[208];
 extern const uint16_t title_pal[256];
 extern const uint32_t title_tiles[BG_IMG_WORDS];
 extern const uint16_t *const board_pal[NUM_BOARDS];
 extern const uint32_t *const board_tiles[NUM_BOARDS];
-extern const uint32_t obj_tiles[376];
-extern const uint32_t font_tiles[1536];
+extern const uint32_t obj_tiles[728];
+extern const uint32_t font_tiles[1568];
 
 #endif

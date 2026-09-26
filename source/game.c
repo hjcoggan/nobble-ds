@@ -2,14 +2,14 @@
 
 #define FIX(n) ((n) << 8)
 #define GRAVITY 12                 // 8.8 px/frame^2
-#define FLOATY_GRAVITY 7
 #define LAUNCH_SPEED (3 * 256)     // 8.8 px/frame
 #define MAX_SPEED FIX(5)
 #define SUBSTEPS 2
 #define PEG_BOUNCE 230             // restitution off pegs, 8.8
 #define WALL_BOUNCE 230
 #define PEG_COOLDOWN 6
-#define FLASH_FRAMES 8
+#define MAX_RICOCHETS 6            // ricochet pops per launch
+#define MAX_DEPTH 2                // items triggering items triggering items
 
 // 6 rows alternating 4 and 3 pegs
 const Slot slots[NUM_SLOTS] = {
@@ -21,15 +21,39 @@ const Slot slots[NUM_SLOTS] = {
     { 84, 132 }, { 120, 132 }, { 156, 132 },
 };
 
+const char *const trigger_text[NUM_TRIGGERS] = {
+    [TRIG_PASSIVE]   = "ALWAYS:",
+    [TRIG_LAUNCH]    = "ON LAUNCH:",
+    [TRIG_FIRST_POP] = "FIRST PEG POPPED:",
+    [TRIG_PEG_GONE]  = "PEG POPPED AWAY:",
+    [TRIG_WALL]      = "WALL BOUNCE:",
+    [TRIG_DIES]      = "NUBBY FALLS OUT:",
+    [TRIG_EVERY_8]   = "EVERY 8 PEGS POPPED:",
+};
+
 const ItemInfo item_info[NUM_ITEMS] = {
-    [ITEM_SPRINGS] = { "SPRINGS", "FLOOR BOUNCES NUBBY ONCE", 6 },
-    [ITEM_WALLS]   = { "WALLS",   "WALL BOUNCES SCORE +3",    4 },
-    [ITEM_PUMP]    = { "PUMP",    "LOWEST PEG X2 EACH ROUND", 5 },
-    [ITEM_BIG]     = { "BIG",     "NUBBY IS BIGGER",          6 },
-    [ITEM_FIRST]   = { "FIRST",   "FIRST HIT SCORES X3",      5 },
-    [ITEM_FLOATY]  = { "FLOATY",  "LOWER GRAVITY",            5 },
-    [ITEM_HEART]   = { "HEART",   "+1 LIFE AND MAX LIVES",    7 },
-    [ITEM_RICH]    = { "RICH",    "+1 COIN PER RESTOCK",      4 },
+    [ITEM_SPRINGS]  = { "SPRINGS",  "BOUNCE BACK UP ONCE",   TRIG_DIES,      6 },
+    [ITEM_SEEDER]   = { "SEEDER",   "ADD A PEG",             TRIG_LAUNCH,    4 },
+    [ITEM_PUMP]     = { "PUMP",     "DOUBLE THE LOWEST PEG", TRIG_LAUNCH,    5 },
+    [ITEM_ZAPPER]   = { "ZAPPER",   "POP THE HIGHEST PEG",   TRIG_FIRST_POP, 5 },
+    [ITEM_DOUBLER]  = { "DOUBLER",  "DOUBLE A RANDOM PEG",   TRIG_FIRST_POP, 5 },
+    [ITEM_RICOCHET] = { "RICOCHET", "POP A RANDOM PEG",      TRIG_WALL,      6 },
+    [ITEM_PIGGY]    = { "PIGGY",    "1 IN 4 CHANCE: +1 COIN", TRIG_PEG_GONE, 4 },
+    [ITEM_ENCORE]   = { "ENCORE",   "+25% OF LAUNCH SCORE",  TRIG_DIES,      6 },
+    [ITEM_CHAIN]    = { "CHAIN",    "DOUBLE A RANDOM PEG",   TRIG_EVERY_8,   5 },
+    [ITEM_BIG]      = { "BIG",      "NUBBY IS BIGGER",       TRIG_PASSIVE,   6 },
+    [ITEM_HEART]    = { "HEART",    "+1 LIFE AND MAX LIVES", TRIG_PASSIVE,   7 },
+};
+
+const PerkInfo perk_info[NUM_PERKS] = {
+    [PERK_CHEESY]   = { "CHEESY",   "EVERY 3 SECONDS:",      "TRIGGER ALL ITEMS" },
+    [PERK_CHAOTIC]  = { "CHAOTIC",  "EVERY SECOND:",         "TRIGGER A RANDOM ITEM" },
+    [PERK_WAFFLE]   = { "WAFFLE",   "FIRST PEG POPPED:",     "TRIGGER SLOTS 1 3 5" },
+    [PERK_KEBAB]    = { "KEBAB",    "NUBBY FALLS OUT: 50%",  "TRIGGER THE LAST ITEM" },
+    [PERK_SPRINGY]  = { "SPRINGY",  "WALL BOUNCE: 1 IN 4",   "TRIGGER SLOT 5" },
+    [PERK_TROPHY]   = { "TROPHY",   "PASSING THE GOAL:",     "TRIGGER SLOT 3 X3" },
+    [PERK_BUCKSHOT] = { "BUCKSHOT", "FIRST POP IS THE TOP",  "PEG: SLOTS 1 2 TWICE" },
+    [PERK_HOUSE]    = { "HOUSE",    "15 PEGS POPPED:",       "TRIGGER ALL ITEMS" },
 };
 
 // sin for angles 0..64 (a quarter turn), 8.8
@@ -68,6 +92,13 @@ int game_has(const Game *g, int item)
     return 0;
 }
 
+int game_has_perk(const Game *g, int perk)
+{
+    for (int i = 0; i < g->nperks; i++)
+        if (g->perks[i] == perk) return 1;
+    return 0;
+}
+
 int game_radius(const Game *g) { return game_has(g, ITEM_BIG) ? BIG_NUBBY_R : NUBBY_R; }
 
 int game_potential(const Game *g)
@@ -77,6 +108,8 @@ int game_potential(const Game *g)
         if (g->pegs[i]) total += g->pegs[i] * 2 - 1;     // 8 pays 8+4+2+1
     return total;
 }
+
+static int32_t new_peg_value(const Game *g) { return 1 << (g->round / 4); }
 
 // The quota is a share of everything on the board, rising each round.
 static int quota_for(const Game *g)
@@ -89,12 +122,6 @@ static int quota_for(const Game *g)
 
 static void begin_round(Game *g)
 {
-    if (game_has(g, ITEM_PUMP)) {
-        int low = -1;
-        for (int i = 0; i < NUM_SLOTS; i++)
-            if (g->pegs[i] && (low < 0 || g->pegs[i] < g->pegs[low])) low = i;
-        if (low >= 0) g->pegs[low] *= 2;
-    }
     for (int i = 0; i < NUM_SLOTS; i++) g->round_start[i] = g->pegs[i];
     g->quota = quota_for(g);
     g->score = 0;
@@ -106,9 +133,13 @@ void game_new_run(Game *g, uint32_t seed)
     g->round = 1;
     g->lives = g->max_lives = START_LIVES;
     g->coins = 0;
-    g->nitems = 0;
+    g->nitems = g->nperks = 0;
     g->flying = 0;
+    g->depth = 0;
+    g->ev = 0;
     g->restocks = g->perfect = 0;
+    for (int s = 0; s < MAX_ITEMS; s++) g->item_flash[s] = 0;
+    for (int s = 0; s < MAX_PERKS; s++) g->perk_flash[s] = 0;
     // a starter board: mostly 1s and 2s with a couple of 4s
     for (int i = 0; i < NUM_SLOTS; i++) {
         int r = rand_below(g, 100);
@@ -116,6 +147,153 @@ void game_new_run(Game *g, uint32_t seed)
         g->cooldown[i] = g->flash[i] = 0;
     }
     begin_round(g);
+}
+
+// ---------------------------------------------------------------- items and perks
+
+static void fire(Game *g, int trigger);
+static void trigger_slot(Game *g, int slot, int perk);
+static void trigger_all(Game *g, int perk);
+
+static int pick_peg(Game *g, int want)   // want: 0 random, 1 lowest, 2 highest
+{
+    int best = -1, n = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        if (!g->pegs[i]) continue;
+        if (want == 0) {
+            if (rand_below(g, ++n) == 0) best = i;       // reservoir pick
+        } else if (best < 0 || (want == 1 ? g->pegs[i] < g->pegs[best] : g->pegs[i] > g->pegs[best])) {
+            best = i;
+        }
+    }
+    return best;
+}
+
+static int highest_value(const Game *g)
+{
+    int32_t v = 0;
+    for (int i = 0; i < NUM_SLOTS; i++)
+        if (g->pegs[i] > v) v = g->pegs[i];
+    return v;
+}
+
+static void check_goal(Game *g)
+{
+    if (g->passed_goal || g->score < g->quota) return;
+    g->passed_goal = 1;
+    if (game_has_perk(g, PERK_TROPHY))
+        for (int k = 0; k < 3; k++) trigger_slot(g, 2, PERK_TROPHY);
+}
+
+// Score peg i and halve it. Returns 1 if it vanished.
+static int pop_peg(Game *g, int i)
+{
+    int32_t v = g->pegs[i];
+    g->score += v;
+    g->hits++;
+    g->pegs[i] = v / 2;              // a 1 disappears
+    g->cooldown[i] = PEG_COOLDOWN;
+    g->flash[i] = FLASH_FRAMES;
+    if (g->ev) {
+        g->ev->pop = 1;
+        g->ev->gone |= g->pegs[i] == 0;
+    }
+    check_goal(g);
+    if (g->hits % 8 == 0) fire(g, TRIG_EVERY_8);
+    if (g->hits == 15 && game_has_perk(g, PERK_HOUSE)) trigger_all(g, PERK_HOUSE);
+    if (!g->pegs[i]) fire(g, TRIG_PEG_GONE);
+    return g->pegs[i] == 0;
+}
+
+// Carry out the item in `slot`.
+static void run_item(Game *g, int slot)
+{
+    if (slot < 0 || slot >= g->nitems || g->depth > MAX_DEPTH) return;
+    int i;
+    g->depth++;
+    g->item_flash[slot] = FLASH_FRAMES * 2;
+    if (g->ev) g->ev->item = 1;
+    switch (g->items[slot]) {
+    case ITEM_SPRINGS:
+        if (g->flying && !g->spring_used) {
+            g->spring_used = 1;
+            if (g->vy > 0) g->vy = -g->vy;
+            g->vy -= FIX(1);
+            if (g->vy < -MAX_SPEED) g->vy = -MAX_SPEED;
+            if (g->y > FIX(FLOOR_Y)) g->y = FIX(FLOOR_Y);
+            if (g->ev) g->ev->spring = 1;
+        }
+        break;
+    case ITEM_SEEDER: {
+        int empty = -1, n = 0;
+        for (int k = 0; k < NUM_SLOTS; k++)
+            if (!g->pegs[k] && rand_below(g, ++n) == 0) empty = k;
+        if (empty >= 0) {
+            g->pegs[empty] = new_peg_value(g);
+            g->flash[empty] = FLASH_FRAMES;
+        } else if ((i = pick_peg(g, 0)) >= 0) {
+            g->pegs[i] *= 2;
+        }
+        break;
+    }
+    case ITEM_PUMP:
+        if ((i = pick_peg(g, 1)) >= 0) {
+            g->pegs[i] *= 2;
+            g->flash[i] = FLASH_FRAMES;
+        }
+        break;
+    case ITEM_ZAPPER:
+        if ((i = pick_peg(g, 2)) >= 0) pop_peg(g, i);
+        break;
+    case ITEM_DOUBLER:
+    case ITEM_CHAIN:
+        if ((i = pick_peg(g, 0)) >= 0) {
+            g->pegs[i] *= 2;
+            g->flash[i] = FLASH_FRAMES;
+        }
+        break;
+    case ITEM_RICOCHET:
+        if (g->ricochets < MAX_RICOCHETS && (i = pick_peg(g, 0)) >= 0) {
+            g->ricochets++;
+            pop_peg(g, i);
+        }
+        break;
+    case ITEM_PIGGY:
+        if (rand_below(g, 4) == 0) g->coins++;
+        break;
+    case ITEM_ENCORE:
+        g->score += (g->score + 3) / 4;     // rounded up, so small scores still grow
+        check_goal(g);
+        break;
+    default:                            // passive items do nothing when triggered
+        break;
+    }
+    g->depth--;
+}
+
+static void flash_perk(Game *g, int perk)
+{
+    for (int p = 0; p < g->nperks; p++)
+        if (g->perks[p] == perk) g->perk_flash[p] = FLASH_FRAMES * 2;
+}
+
+static void trigger_slot(Game *g, int slot, int perk)
+{
+    flash_perk(g, perk);
+    run_item(g, slot);
+}
+
+static void trigger_all(Game *g, int perk)
+{
+    flash_perk(g, perk);
+    for (int s = 0; s < g->nitems; s++) run_item(g, s);
+}
+
+// Fire every item with this trigger, in slot order.
+static void fire(Game *g, int trigger)
+{
+    for (int s = 0; s < g->nitems; s++)
+        if (item_info[g->items[s]].trigger == trigger) run_item(g, s);
 }
 
 // ---------------------------------------------------------------- physics
@@ -145,7 +323,9 @@ void game_launch(Game *g, int angle)
     g->vx = isin(angle) * LAUNCH_SPEED / 256;
     g->vy = icos(angle) * LAUNCH_SPEED / 256;
     g->score = g->hits = g->frames = g->still = g->spring_used = 0;
+    g->ricochets = g->passed_goal = 0;
     g->flying = 1;
+    fire(g, TRIG_LAUNCH);
 }
 
 // Bounce Nubby off a peg at (cx, cy). Returns 1 on contact.
@@ -178,19 +358,25 @@ static int collide(Game *g, int nr, int cx, int cy)
     return 1;
 }
 
-static void pop(Game *g, int i, Events *ev)
+// Nubby hit peg i.
+static void hit_peg(Game *g, int i)
 {
-    int v = g->pegs[i];
-    int pts = v;
-    if (g->hits == 0 && game_has(g, ITEM_FIRST)) pts *= 3;
-    g->score += pts;
-    g->hits++;
-    g->pegs[i] = v / 2;              // a 1 disappears
-    g->cooldown[i] = PEG_COOLDOWN;
-    g->flash[i] = FLASH_FRAMES;
-    ev->pop = 1;
-    ev->gone = g->pegs[i] == 0;
-    ev->value = pts;
+    int first = g->hits == 0;
+    int was_top = g->pegs[i] == highest_value(g);
+    pop_peg(g, i);
+    if (!first) return;
+    fire(g, TRIG_FIRST_POP);
+    if (game_has_perk(g, PERK_WAFFLE)) {
+        flash_perk(g, PERK_WAFFLE);
+        for (int s = 0; s < MAX_ITEMS; s += 2) run_item(g, s);
+    }
+    if (was_top && game_has_perk(g, PERK_BUCKSHOT)) {
+        flash_perk(g, PERK_BUCKSHOT);
+        for (int k = 0; k < 2; k++) {
+            run_item(g, 0);
+            run_item(g, 1);
+        }
+    }
 }
 
 // Walls and ceiling; returns 1 if Nubby bounced off a side wall.
@@ -229,41 +415,41 @@ static void clamp_speed(int32_t *vx, int32_t *vy)
 static void substep(Game *g, Events *ev)
 {
     int r = game_radius(g);
-    g->vy += (game_has(g, ITEM_FLOATY) ? FLOATY_GRAVITY : GRAVITY) / SUBSTEPS;
+    g->vy += GRAVITY / SUBSTEPS;
     clamp_speed(&g->vx, &g->vy);
     g->x += g->vx / SUBSTEPS;
     g->y += g->vy / SUBSTEPS;
 
     if (walls(&g->x, &g->y, &g->vx, &g->vy, r)) {
-        if (game_has(g, ITEM_WALLS)) g->score += 3;
         ev->wall = 1;
+        fire(g, TRIG_WALL);
+        if (game_has_perk(g, PERK_SPRINGY) && rand_below(g, 4) == 0) trigger_slot(g, 4, PERK_SPRINGY);
     }
 
-    for (int i = 0; i < NUM_SLOTS; i++) {
-        if (g->pegs[i] && collide(g, r, slots[i].x, slots[i].y) && !g->cooldown[i]) pop(g, i, ev);
-    }
-
-    if (!g->spring_used && game_has(g, ITEM_SPRINGS) && g->y > FIX(FLOOR_Y) && g->vy > 0) {
-        g->vy = -g->vy - FIX(1);
-        if (g->vy < -MAX_SPEED) g->vy = -MAX_SPEED;
-        g->spring_used = 1;
-        ev->spring = 1;
-    }
+    for (int i = 0; i < NUM_SLOTS; i++)
+        if (g->pegs[i] && collide(g, r, slots[i].x, slots[i].y) && !g->cooldown[i]) hit_peg(g, i);
 }
 
 int game_step(Game *g, Events *ev)
 {
-    ev->pop = ev->gone = ev->wall = ev->spring = 0;
-    ev->value = 0;
+    ev->pop = ev->gone = ev->wall = ev->spring = ev->item = 0;
     for (int i = 0; i < NUM_SLOTS; i++) {
         if (g->cooldown[i]) g->cooldown[i]--;
         if (g->flash[i]) g->flash[i]--;
     }
+    for (int s = 0; s < MAX_ITEMS; s++)
+        if (g->item_flash[s]) g->item_flash[s]--;
+    for (int p = 0; p < MAX_PERKS; p++)
+        if (g->perk_flash[p]) g->perk_flash[p]--;
     if (!g->flying) return 0;
 
+    g->ev = ev;
     for (int s = 0; s < SUBSTEPS; s++) substep(g, ev);
     g->frames++;
-    ev->hits = g->hits;
+
+    if (game_has_perk(g, PERK_CHEESY) && g->frames % 180 == 0) trigger_all(g, PERK_CHEESY);
+    if (game_has_perk(g, PERK_CHAOTIC) && g->frames % 60 == 0 && g->nitems)
+        trigger_slot(g, rand_below(g, g->nitems), PERK_CHAOTIC);
 
     // if Nubby comes to rest on something, give it a shove
     int slow = g->vx < 40 && g->vx > -40 && g->vy < 40 && g->vy > -40;
@@ -274,11 +460,18 @@ int game_step(Game *g, Events *ev)
         g->still = 0;
     }
 
+    int out = 0;
     if (g->y > FIX(EXIT_Y) || g->frames > LAUNCH_TIMEOUT) {
-        g->flying = 0;
-        return 1;
+        fire(g, TRIG_DIES);
+        if (game_has_perk(g, PERK_KEBAB) && g->nitems && rand_below(g, 2) == 0)
+            trigger_slot(g, g->nitems - 1, PERK_KEBAB);
+        // springs can pull Nubby back from the brink
+        out = g->y > FIX(FLOOR_Y) || g->frames > LAUNCH_TIMEOUT;
+        if (out) g->flying = 0;
     }
-    return 0;
+    ev->hits = g->hits;
+    g->ev = 0;
+    return out;
 }
 
 // ---------------------------------------------------------------- rounds
@@ -287,12 +480,12 @@ int game_step(Game *g, Events *ev)
 // any peg already showing that value swallows a copy of it and doubles.
 static void restock(Game *g)
 {
-    int32_t v = 1 << (g->round / 4);
+    int32_t v = new_peg_value(g);
     for (int i = 0; i < NUM_SLOTS; i++) {
         if (g->pegs[i] == v) g->pegs[i] *= 2;
         else if (!g->pegs[i]) g->pegs[i] = v;
     }
-    g->coins += 1 + (game_has(g, ITEM_RICH) ? 1 : 0);
+    g->coins++;
 }
 
 Result game_resolve(Game *g)
@@ -318,9 +511,9 @@ Result game_resolve(Game *g)
     return g->lives > 0 ? RESULT_RETRY : RESULT_GAME_OVER;
 }
 
-int game_shop_due(const Game *g) { return g->round > 1 && (g->round - 1) % SHOP_EVERY == 0; }
+// ---------------------------------------------------------------- shop and perks
 
-// ---------------------------------------------------------------- shop
+int game_shop_due(const Game *g) { return g->round > 1 && (g->round - 1) % SHOP_EVERY == 0; }
 
 void game_roll_shop(Game *g)
 {
@@ -352,19 +545,40 @@ int game_buy(Game *g, int slot)
     return 1;
 }
 
+int game_perk_due(const Game *g)
+{
+    return g->round > 1 && (g->round - 1) % PERK_EVERY == 0 && g->nperks < MAX_PERKS;
+}
+
+void game_roll_perks(Game *g)
+{
+    int pool[NUM_PERKS], n = 0;
+    for (int p = 0; p < NUM_PERKS; p++)
+        if (!game_has_perk(g, p)) pool[n++] = p;
+    for (int c = 0; c < PERK_CHOICES; c++) {
+        int k = rand_below(g, n);
+        g->perk_offer[c] = pool[k];
+        pool[k] = pool[--n];
+    }
+}
+
+void game_take_perk(Game *g, int choice)
+{
+    if (g->nperks < MAX_PERKS) g->perks[g->nperks++] = (uint8_t)g->perk_offer[choice];
+}
+
 // ---------------------------------------------------------------- aim guide
 
 int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
 {
     int r = game_radius(g);
-    int grav = game_has(g, ITEM_FLOATY) ? FLOATY_GRAVITY : GRAVITY;
     int32_t x = FIX(LAUNCH_X), y = FIX(LAUNCH_Y);
     int32_t vx = isin(angle) * LAUNCH_SPEED / 256, vy = icos(angle) * LAUNCH_SPEED / 256;
     int32_t reach = FIX(r + PEG_R);
     int count = 0;
     for (int f = 1; f <= 60 && count < n; f++) {
         for (int s = 0; s < SUBSTEPS; s++) {
-            vy += grav / SUBSTEPS;
+            vy += GRAVITY / SUBSTEPS;
             clamp_speed(&vx, &vy);
             x += vx / SUBSTEPS;
             y += vy / SUBSTEPS;

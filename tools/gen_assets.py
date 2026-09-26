@@ -269,7 +269,7 @@ def pal16(cols):
 
 
 # ---------------------------------------------------------------- font
-FONT_CHARS = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.',"
+FONT_CHARS = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.',%"
 GLYPHS = {
     "0": ".###. #...# #..## #.#.# ##..# #...# .###.",
     "1": "..#.. .##.. ..#.. ..#.. ..#.. ..#.. .###.",
@@ -316,6 +316,7 @@ GLYPHS = {
     ".": "..... ..... ..... ..... ..... ..... ..#..",
     "'": "..#.. ..#.. .#... ..... ..... ..... .....",
     ",": "..... ..... ..... ..... ..... ..#.. .#...",
+    "%": "##..# ##.#. ...#. ..#.. .#... .#.## #..##",
 }
 # styles: plain, on a panel, highlighted on a panel, gold (no panel)
 FONT_STYLES = [(1, 2, 0), (1, 2, 3), (6, 2, 3), (6, 2, 0)]
@@ -612,15 +613,29 @@ ICON_PAL = [(0, 0, 0), INK, (255, 255, 255),
             (255, 130, 60)]                        # orange
 ICON_COLORS = {"gray": (3, 4), "purple": (5, 6), "green": (7, 8), "gold": (9, 10),
                "blue": (11, 12), "pink": (13, 14), "orange": (15, 10)}
-ICONS = [   # (colour, 5x7 symbol) in item order
-    ("blue", "..#.. .###. #.#.# ..#.. ..#.. ..#.. ..#.."),     # springs: up arrow
-    ("gray", GLYPHS["W"]),                                   # walls
-    ("purple", GLYPHS["X"]),                                 # pump: x2
-    ("orange", GLYPHS["+"]),                                 # big
-    ("gold", GLYPHS["3"]),                                   # first hit x3
-    ("green", GLYPHS["F"]),                                  # floaty
-    ("pink", "..... .#.#. ##### ##### .###. ..#.. ....."),     # heart
-    ("gold", "..#.. .#### #.#.. .###. ..#.# ####. ..#.."),     # rich: $
+UP_ARROW = "..#.. .###. #.#.# ..#.. ..#.. ..#.. ..#.."
+ICONS = [   # items, in game.h order: (colour, 5x7 symbol)
+    ("blue", UP_ARROW),                                           # springs
+    ("green", GLYPHS["+"]),                                       # seeder
+    ("purple", "..#.. .#.#. #...# ..#.. .#.#. #...# ....."),        # pump: double chevron
+    ("gold", "...## ..##. .##.. ##### ..##. .##.. ##..."),          # zapper: lightning
+    ("orange", GLYPHS["X"]),                                      # doubler
+    ("gray", GLYPHS["Z"]),                                        # ricochet
+    ("pink", "..#.. .#### #.#.. .###. ..#.# ####. ..#.."),          # piggy: $
+    ("gold", GLYPHS["E"]),                                        # encore
+    ("purple", GLYPHS["8"]),                                      # chain
+    ("orange", ".###. #...# #...# #...# #...# #...# .###."),        # big
+    ("pink", "..... .#.#. ##### ##### .###. ..#.. ....."),          # heart
+]
+PERK_ICONS = [   # perks, in game.h order
+    ("gold", GLYPHS["C"]),                                        # cheesy
+    ("purple", ".###. #...# ...#. ..#.. ..#.. ..... ..#.."),        # chaotic: ?
+    ("orange", GLYPHS["W"]),                                      # waffle
+    ("pink", GLYPHS["K"]),                                        # kebab
+    ("blue", GLYPHS["S"]),                                        # springy
+    ("gold", GLYPHS["T"]),                                        # trophy
+    ("gray", GLYPHS["B"]),                                        # buckshot
+    ("green", GLYPHS["H"]),                                       # house of cards
 ]
 
 
@@ -674,15 +689,21 @@ def nubby_sprite(blink, size=8, r=4.1):
     return img
 
 
-def icon_sprite(colour, symbol):
+def icon_sprite(colour, symbol, round_badge=False):
     light, dark = ICON_COLORS[colour]
     img = [[0] * 16 for _ in range(16)]
     for y in range(16):
         for x in range(16):
-            inside = 1 <= x <= 14 and 1 <= y <= 14 and not ((x in (1, 14)) and (y in (1, 14)))
-            if not inside:
-                continue
-            edge = x in (1, 14) or y in (1, 14) or ((x in (2, 13)) and (y in (2, 13)))
+            if round_badge:
+                d = math.hypot(x + 0.5 - 8, y + 0.5 - 8)
+                if d > 7.2:
+                    continue
+                edge = d > 6.2
+            else:
+                inside = 1 <= x <= 14 and 1 <= y <= 14 and not ((x in (1, 14)) and (y in (1, 14)))
+                if not inside:
+                    continue
+                edge = x in (1, 14) or y in (1, 14) or ((x in (2, 13)) and (y in (2, 13)))
             img[y][x] = 1 if edge else (light if y < 8 else dark)
     rows = symbol.split()
     for r, row in enumerate(rows):
@@ -705,6 +726,7 @@ for p in TIER_PALS:
     obj_pal += pal16([(0, 0, 0)] + p)
 obj_pal += pal16([(0, 0, 0)] + FLASH_PAL)
 obj_pal += pal16(ICON_PAL)
+obj_pal += pal16([ICON_PAL[0]] + [mix(c, (255, 255, 255), 0.55) for c in ICON_PAL[1:]])   # flash
 
 # sprite tiles (4bpp, 1D mapping); record where each sprite starts
 obj_tiles, tile_of = [], {}
@@ -726,6 +748,8 @@ dot[5][4] = dot[4][5] = dot[5][5] = 5
 add_sprite("dot", dot)
 for i, (colour, sym) in enumerate(ICONS):
     add_sprite(f"icon{i}", icon_sprite(colour, sym))
+for i, (colour, sym) in enumerate(PERK_ICONS):
+    add_sprite(f"perk{i}", icon_sprite(colour, sym, True))
 
 title_cv = render_title()
 title_pal, title_tiles, title_idx = bg_image(title_cv)
@@ -753,12 +777,14 @@ hdr = f"""// Generated by tools/gen_assets.py - do not edit.
 #define TILE_PEG {tile_of["peg"]}           // 16x16 disc template (4 tiles)
 #define TILE_DOT {tile_of["dot"]}
 #define TILE_ICON(i) ({tile_of["icon0"]} + (i) * 4)
+#define TILE_PERK(i) ({tile_of["perk0"]} + (i) * 4)
 #define TILE_FREE {len(obj_tiles) // 8}        // first unused sprite tile
 #define PAL_NUBBY 0
 #define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
 #define NUM_TIERS {len(TIERS)}
 #define PAL_FLASH {1 + len(TIERS)}
 #define PAL_ICON {2 + len(TIERS)}
+#define PAL_ICON_FLASH {3 + len(TIERS)}
 
 extern const uint16_t font_pal[16];
 extern const uint16_t obj_pal[{len(obj_pal)}];
@@ -839,9 +865,16 @@ def board_preview(n):
         text(img, 0, row, s)
     text(img, 25, 1, "COINS")
     text(img, 25, 2, "    7")
-    text(img, 25, 4, "ITEMS")
-    for i, it in enumerate((0, 4, 6)):
-        blit(img, icon_sprite(*ICONS[it]), 212, 44 + i * 20, [(0, 0, 0)] + ICON_PAL[1:])
+    text(img, 25, 3, "ITEMS")
+    icon_pal = [(0, 0, 0)] + ICON_PAL[1:]
+    for i, it in enumerate((2, 3, 5, 7)):
+        text(img, 25, 4 + i * 2, str(i + 1), FONT_PAL[6])
+        blit(img, icon_sprite(*ICONS[it]), 214, 32 + i * 16, icon_pal)
+    text(img, 25, 15, "SHOP")
+    text(img, 25, 16, "IN  2")
+    text(img, 0, 13, "PERKS")
+    for i, pk in enumerate((0, 5)):
+        blit(img, icon_sprite(*PERK_ICONS[pk], True), 2 + (i % 2) * 18, 112 + (i // 2) * 18, icon_pal)
     return img
 
 

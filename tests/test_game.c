@@ -149,21 +149,23 @@ static void test_shop(void)
 {
     Game g;
     game_new_run(&g, 7);
-    g.items[g.nitems++] = ITEM_FIRST;
+    g.items[g.nitems++] = ITEM_ZAPPER;
     for (int t = 0; t < 50; t++) {
         game_roll_shop(&g);
         for (int s = 0; s < SHOP_SLOTS; s++) {
-            CHECK(g.shop[s] >= 0 && g.shop[s] != ITEM_FIRST);
+            CHECK(g.shop[s] >= 0 && g.shop[s] != ITEM_ZAPPER);
             for (int o = 0; o < s; o++) CHECK(g.shop[s] != g.shop[o]);
         }
     }
     g.coins = 100;
-    game_roll_shop(&g);
     int bought = 0;
-    for (int s = 0; s < SHOP_SLOTS; s++) bought += game_buy(&g, s);
-    CHECK(bought == 3 && g.nitems == 4);
+    for (int t = 0; t < 3; t++) {
+        game_roll_shop(&g);
+        for (int s = 0; s < SHOP_SLOTS; s++) bought += game_buy(&g, s);
+    }
+    CHECK(g.nitems == MAX_ITEMS && bought == MAX_ITEMS - 1);
     game_roll_shop(&g);
-    CHECK(!game_buy(&g, 0));                  // no room for a fifth item
+    CHECK(!game_buy(&g, 0));                  // no room for a sixth item
 
     game_new_run(&g, 8);
     g.coins = 100;
@@ -175,6 +177,110 @@ static void test_shop(void)
     CHECK(game_shop_due(&g));
     g.round = 5;
     CHECK(!game_shop_due(&g));
+    g.round = 6;
+    CHECK(game_perk_due(&g));
+}
+
+static Game board_with(uint32_t seed, int item)
+{
+    Game g;
+    game_new_run(&g, seed);
+    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
+    g.pegs[0] = 1;
+    g.pegs[3] = 8;
+    g.pegs[5] = 2;                               // below the launcher
+    if (item >= 0) g.items[g.nitems++] = (uint8_t)item;
+    return g;
+}
+
+static void first_pop(Game *g)
+{
+    Events ev;
+    game_launch(g, 0);
+    while (!game_step(g, &ev) && g->hits == 0) {}
+}
+
+static void test_items(void)
+{
+    Game g = board_with(1, ITEM_PUMP);           // launch: double the lowest peg
+    game_launch(&g, 0);
+    CHECK(g.pegs[0] == 2 && g.item_flash[0]);
+
+    g = board_with(2, ITEM_SEEDER);              // launch: add a peg
+    int before = 0, after = 0;
+    for (int i = 0; i < NUM_SLOTS; i++) before += g.pegs[i] != 0;
+    game_launch(&g, 0);
+    for (int i = 0; i < NUM_SLOTS; i++) after += g.pegs[i] != 0;
+    CHECK(after == before + 1);
+
+    g = board_with(3, ITEM_ZAPPER);              // first pop: pop the highest peg
+    first_pop(&g);
+    CHECK(g.pegs[3] == 4);
+    CHECK(g.score == 2 + 8);
+
+    g = board_with(4, ITEM_ENCORE);              // dies: +25% of the launch score
+    Events ev;
+    game_launch(&g, 0);
+    while (!game_step(&g, &ev)) {}
+    CHECK(g.score >= 2 && g.hits >= 1);
+
+    g = board_with(5, ITEM_SPRINGS);             // dies: bounce back up once
+    game_launch(&g, 0);
+    int springs = 0;
+    while (!game_step(&g, &ev)) springs += ev.spring;
+    CHECK(springs == 1);
+}
+
+static void test_perks(void)
+{
+    // waffle: first pop triggers slots 1, 3 and 5
+    Game g = board_with(6, ITEM_DOUBLER);
+    g.items[g.nitems++] = ITEM_PIGGY;
+    g.items[g.nitems++] = ITEM_PUMP;
+    g.perks[g.nperks++] = PERK_WAFFLE;
+    first_pop(&g);
+    CHECK(g.item_flash[0] && g.item_flash[2] && !g.item_flash[1]);
+    CHECK(g.perk_flash[0]);
+
+    // trophy: passing the goal triggers slot 3 three times. Encore normally
+    // waits for Nubby to fall out, so a flash right after the first pop
+    // can only have come from the perk.
+    g = board_with(7, ITEM_SEEDER);
+    g.items[g.nitems++] = ITEM_PIGGY;
+    g.items[g.nitems++] = ITEM_ENCORE;
+    g.perks[g.nperks++] = PERK_TROPHY;
+    g.quota = 1;
+    first_pop(&g);
+    CHECK(g.passed_goal);
+    CHECK(g.item_flash[2]);
+    CHECK(g.score > 2);                          // encore added to the 2 points
+
+    game_new_run(&g, 9);
+    game_roll_perks(&g);
+    CHECK(g.perk_offer[0] != g.perk_offer[1]);
+    game_take_perk(&g, 1);
+    CHECK(g.nperks == 1 && g.perks[0] == g.perk_offer[1]);
+}
+
+static void test_everything_terminates(void)
+{
+    // every perk and a full set of items: launches still end, scores stay sane
+    long launches = 0, total = 0;
+    for (int run = 0; run < 200; run++) {
+        Game g;
+        game_new_run(&g, 4242 + run);
+        for (int k = 0; k < MAX_ITEMS; k++) g.items[g.nitems++] = (uint8_t)((run + k * 3) % NUM_ITEMS);
+        for (int p = 0; p < MAX_PERKS; p++) g.perks[g.nperks++] = (uint8_t)((run + p * 2) % NUM_PERKS);
+        for (int l = 0; l < 5; l++) {
+            int f = run_launch(&g, random_angle(&g));
+            CHECK(f <= LAUNCH_TIMEOUT + 1);
+            CHECK(g.score >= 0);
+            total += g.score;
+            launches++;
+            if (game_resolve(&g) == RESULT_GAME_OVER) break;
+        }
+    }
+    printf("  loaded-up launches: %ld, average score %ld\n", launches, total / launches);
 }
 
 static void test_predict(void)
@@ -196,6 +302,9 @@ int main(void)
     test_perfect_pop();
     test_runs();
     test_shop();
+    test_items();
+    test_perks();
+    test_everything_terminates();
     test_predict();
     if (failures) {
         printf("%d failure(s)\n", failures);

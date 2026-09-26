@@ -28,18 +28,37 @@ and pop the numbered pegs to hit each round's quota in a single launch.
   new value merge and double. Each restock pays a coin, and clearing a round
   restores a life. New pegs get bigger every 4 rounds, and quotas rise.
 - Pop every peg on the board for a **perfect**: the launch scores double.
-- Every 3 rounds there's a shop. Hold up to 4 items:
+- Every 3 rounds there's a shop. Items go into **5 numbered slots** and each
+  one fires on a trigger. The slot order matters, because perks trigger items
+  by slot number:
 
-| Item | Effect | Cost |
+| Item | Trigger | Effect | Cost |
+| --- | --- | --- | --- |
+| Springs | Nubby falls out | Bounce back up (once per launch) | 6 |
+| Seeder | On launch | Add a peg to an empty slot | 4 |
+| Pump | On launch | Double the lowest peg | 5 |
+| Zapper | First peg popped | Pop the highest peg | 5 |
+| Doubler | First peg popped | Double a random peg | 5 |
+| Ricochet | Wall bounce | Pop a random peg (up to 6 a launch) | 6 |
+| Piggy | Peg popped away | 1 in 4 chance of a coin | 4 |
+| Encore | Nubby falls out | +25% of the launch score | 6 |
+| Chain | Every 8 pegs popped | Double a random peg | 5 |
+| Big | Always | Nubby is bigger | 6 |
+| Heart | Always | +1 life and +1 to your maximum | 7 |
+
+- Every 5 rounds you choose one of two **perks** (up to 4). Perks force items
+  to fire, and an icon flashes whenever an item or perk goes off:
+
+| Perk | When | What it triggers |
 | --- | --- | --- |
-| Springs | The floor bounces Nubby back up once per launch | 6 |
-| Walls | Wall bounces score +3 | 4 |
-| Pump | The lowest peg doubles at the start of each round | 5 |
-| Big | Nubby is bigger | 6 |
-| First | The first hit of each launch scores x3 | 5 |
-| Floaty | Lower gravity, so Nubby hangs around longer | 5 |
-| Heart | +1 life now and +1 to your maximum | 7 |
-| Rich | +1 coin per restock | 4 |
+| Cheesy | Every 3 seconds in flight | All items |
+| Chaotic | Every second in flight | A random item |
+| Waffle | First peg popped | Slots 1, 3 and 5 |
+| Kebab | Nubby falls out | 50% chance: the last item |
+| Springy | Wall bounce | 1 in 4 chance: slot 5 |
+| Trophy | Passing the goal | Slot 3, three times |
+| Buckshot | First pop is the biggest peg | Slots 1 and 2, twice each |
+| House of Cards | 15 pegs popped | All items |
 
 Your furthest round and best single launch are saved to cartridge SRAM (a
 `.sav` file in emulators).
@@ -145,7 +164,7 @@ make test
 
 ```
 source/main.c     Screens, input, HUD, numbered peg sprites, shop, menus, credits
-source/game.c     Launch physics, popping pegs, quotas, restocks, items, shop
+source/game.c     Launch physics, popping pegs, quotas, restocks, items, perks, shop
 source/sound.c    Music and sound effects on the GBA's PSG channels
 source/ui.c       Text, panels and menus
 source/save.c     Best round and score in SRAM

@@ -12,8 +12,9 @@
 
 // OAM slots
 #define OBJ_NUBBY 0
-#define OBJ_ICON  1               // 4 slots: owned items, or shop wares
-#define OBJ_DOT   5               // aim guide
+#define OBJ_ICON  1               // 5 slots: owned items, or shop wares / perk choices
+#define OBJ_PERK  (OBJ_ICON + MAX_ITEMS)
+#define OBJ_DOT   (OBJ_PERK + MAX_PERKS)   // aim guide
 #define OBJ_PEG   (OBJ_DOT + AIM_DOTS)
 
 // each slot's peg has its own 16x16 sprite with its number drawn on
@@ -23,7 +24,7 @@
 
 typedef enum {
     ST_TITLE, ST_MENU, ST_HOWTO, ST_CREDITS,
-    ST_AIM, ST_FLY, ST_RESULT, ST_SHOP, ST_PAUSE, ST_OVER,
+    ST_AIM, ST_FLY, ST_RESULT, ST_PERK, ST_SHOP, ST_PAUSE, ST_OVER,
 } State;
 
 enum { MAIN_PLAY, MAIN_HOWTO, MAIN_CREDITS, MAIN_COUNT };
@@ -91,9 +92,14 @@ static void set_obj(int n, int x, int y, uint16_t a1size, uint16_t a2)
 
 static void hide_obj(int n) { oam[n * 4] = ATTR0_HIDE; }
 
-static void icon_obj(int n, int item, int x, int y, int prio)
+static void icon_obj(int n, int item, int x, int y, int prio, int lit)
 {
-    set_obj(n, x, y, ATTR1_SIZE16, TILE_ICON(item) | ATTR2_PRIO(prio) | ATTR2_PAL(PAL_ICON));
+    set_obj(n, x, y, ATTR1_SIZE16, TILE_ICON(item) | ATTR2_PRIO(prio) | ATTR2_PAL(lit ? PAL_ICON_FLASH : PAL_ICON));
+}
+
+static void perk_obj(int n, int perk, int x, int y, int prio, int lit)
+{
+    set_obj(n, x, y, ATTR1_SIZE16, TILE_PERK(perk) | ATTR2_PRIO(prio) | ATTR2_PAL(lit ? PAL_ICON_FLASH : PAL_ICON));
 }
 
 // ---------------------------------------------------------------- numbered pegs
@@ -168,7 +174,11 @@ static void draw_objects(void)
 
     if (state == ST_SHOP) {
         for (int s = 0; s < SHOP_SLOTS; s++)
-            if (game.shop[s] >= 0) icon_obj(OBJ_ICON + s, game.shop[s], 24, 36 + s * 24, 0);
+            if (game.shop[s] >= 0) icon_obj(OBJ_ICON + s, game.shop[s], 24, 36 + s * 24, 0, 0);
+        return;
+    }
+    if (state == ST_PERK) {
+        for (int c = 0; c < PERK_CHOICES; c++) perk_obj(OBJ_ICON + c, game.perk_offer[c], 24, 44 + c * 40, 0, 0);
         return;
     }
     if (!on_board()) return;
@@ -191,7 +201,11 @@ static void draw_objects(void)
                     TILE_DOT | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
     }
 
-    for (int i = 0; i < game.nitems; i++) icon_obj(OBJ_ICON + i, game.items[i], 212, 44 + i * 20, 1);
+    // items in numbered slots on the right, perks on the left; both flash when they fire
+    for (int i = 0; i < game.nitems; i++)
+        icon_obj(OBJ_ICON + i, game.items[i], 214, 32 + i * 16, 1, game.item_flash[i] & 4);
+    for (int p = 0; p < game.nperks; p++)
+        perk_obj(OBJ_PERK + p, game.perks[p], 2 + (p % 2) * 18, 112 + (p / 2) * 18, 1, game.perk_flash[p] & 4);
 
     for (int i = 0; i < NUM_SLOTS; i++) {
         int32_t v = game.pegs[i];
@@ -270,13 +284,19 @@ static void draw_hud(void)
     text_at(0, 10, "LIVES");
     num_right(0, 11, game.lives, 5);
 
+    if (game.nperks) text_at(0, 13, "PERKS");
+
     text_at(25, 1, "COINS");
     num_right(25, 2, game.coins, 5);
-    text_at(25, 4, "ITEMS");
+    text_at(25, 3, "ITEMS");
+    for (int s = 0; s < MAX_ITEMS; s++) {
+        char n[2] = { (char)('1' + s), 0 };
+        text_style(25, 4 + s * 2, n, TXT_GOLD);
+    }
     int until = SHOP_EVERY - (game.round - 1) % SHOP_EVERY;
-    text_at(25, 14, "SHOP");
-    text_at(25, 15, "IN");
-    num_right(27, 15, until, 3);
+    text_at(25, 15, "SHOP");
+    text_at(25, 16, "IN");
+    num_right(27, 16, until, 3);
 }
 
 // ---------------------------------------------------------------- saving
@@ -509,7 +529,7 @@ static void finish_launch(void)
         put_str(p, game.restocks == 1 ? " RESTOCK" : " RESTOCKS");
         text_center(10, buf, TXT_PANEL);
         p = put_str(buf, "+");
-        p = put_num(p, game.restocks * (game_has(&game, ITEM_RICH) ? 2 : 1));
+        p = put_num(p, game.restocks);
         put_str(p, " COINS");
         text_center(11, buf, TXT_GOLD);
     } else {
@@ -532,7 +552,11 @@ static void draw_shop(void)
     panel(1, 28, 18);
     text_center(2, "SHOP", TXT_HILITE);
     p = put_str(buf, "COINS ");
-    put_num(p, game.coins);
+    p = put_num(p, game.coins);
+    p = put_str(p, "   ITEMS ");
+    p = put_num(p, game.nitems);
+    p = put_str(p, " OF ");
+    put_num(p, MAX_ITEMS);
     text_center(3, buf, TXT_GOLD);
     for (int s = 0; s <= SHOP_SLOTS; s++) {
         int row = 5 + s * 3;
@@ -557,12 +581,9 @@ static void draw_shop(void)
     text_style(2, 16, "                        ", TXT_PANEL);
     text_style(2, 17, "                        ", TXT_PANEL);
     if (menu_sel < SHOP_SLOTS && game.shop[menu_sel] >= 0) {
-        text_center(16, item_info[game.shop[menu_sel]].desc, TXT_HILITE);
-        p = put_str(buf, "ITEMS ");
-        p = put_num(p, game.nitems);
-        p = put_str(p, " OF ");
-        put_num(p, MAX_ITEMS);
-        text_center(17, buf, TXT_PANEL);
+        const ItemInfo *it = &item_info[game.shop[menu_sel]];
+        text_center(16, trigger_text[it->trigger], TXT_PANEL);
+        text_center(17, it->effect, TXT_HILITE);
     }
 }
 
@@ -633,17 +654,64 @@ static void update_fly(uint16_t pressed)
     int out = game_step(&game, &ev);
     if (ev.spring) sfx_spring();
     else if (ev.pop) sfx_peg(ev.hits, ev.gone ? SFX_POP_GONE : SFX_POP);
+    else if (ev.item) sfx_item();
     else if (ev.wall) sfx_wall();
     draw_hud();
     if (out) finish_launch();
+}
+
+static void open_shop(void);
+
+// After a cleared round: a perk choice, then the shop, then the next board.
+static void next_after_perk(void)
+{
+    if (game_shop_due(&game)) open_shop();
+    else show_board();
+}
+
+static void draw_perks(void)
+{
+    panel(2, 28, 16);
+    text_center(3, "CHOOSE A PERK", TXT_HILITE);
+    for (int c = 0; c < PERK_CHOICES; c++) {
+        const PerkInfo *pk = &perk_info[game.perk_offer[c]];
+        int row = 6 + c * 5, on = c == menu_sel;
+        text_style(2, row, on ? ">" : " ", on ? TXT_HILITE : TXT_PANEL);
+        text_style(6, row, pk->name, on ? TXT_HILITE : TXT_PANEL);
+        text_style(6, row + 1, pk->line1, TXT_PANEL);
+        text_style(6, row + 2, pk->line2, TXT_PANEL);
+    }
+    text_center(16, "PERKS TRIGGER YOUR ITEMS", TXT_PANEL);
+}
+
+static void open_perks(void)
+{
+    fade(1);
+    game_roll_perks(&game);
+    state = ST_PERK;
+    menu_sel = 0;
+    text_clear();
+    draw_perks();
+    REG_BLDCNT = BLD_DARKEN | BLD_BG0;
+    REG_BLDY = 12;
+    music_play(SONG_SHOP);
+}
+
+static void update_perks(uint16_t pressed)
+{
+    if (menu_move(pressed, PERK_CHOICES)) draw_perks();
+    if (!(pressed & KEY_A)) return;
+    game_take_perk(&game, menu_sel);
+    sfx_buy();
+    next_after_perk();
 }
 
 static void update_result(void)
 {
     if (--timer > 0) return;
     if (last_result == RESULT_CLEARED) {
-        if (game_shop_due(&game)) open_shop();
-        else show_board();
+        if (game_perk_due(&game)) open_perks();
+        else next_after_perk();
     } else {
         text_clear();
         draw_hud();
@@ -731,6 +799,9 @@ int main(void)
             break;
         case ST_RESULT:
             update_result();
+            break;
+        case ST_PERK:
+            update_perks(pressed);
             break;
         case ST_SHOP:
             update_shop(pressed);

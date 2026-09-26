@@ -354,6 +354,12 @@ void sfx_launch(void)
     SND1_FREQ = RESTART | square_rate[84];
 }
 
+void sfx_item(void)
+{
+    static const uint8_t seq[] = { 91, 2, 96, 2, 103, 4, 0 };
+    sfx_start(seq);
+}
+
 void sfx_move(void)
 {
     static const uint8_t seq[] = { 79, 2, 84, 3, 0 };

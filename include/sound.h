@@ -21,6 +21,7 @@ void sfx_peg(int hits, int kind);   // hits: pegs hit so far this launch
 void sfx_spring(void);
 void sfx_wall(void);
 void sfx_launch(void);
+void sfx_item(void);         // an item fired
 void sfx_move(void);
 void sfx_buy(void);
 void sfx_deny(void);
