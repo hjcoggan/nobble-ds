@@ -677,9 +677,9 @@ def render_title():
 
     draw_big_nubby(cv, 30, 104, 19)
     glossy_ball(cv, 206, 98, 16, (60, 190, 80), "8")
-    glossy_ball(cv, 188, 136, 10, (250, 130, 40), "2")
-    glossy_ball(cv, 224, 138, 9, (60, 140, 240), "16")
-    glossy_ball(cv, 60, 138, 9, (190, 90, 230), "4")
+    glossy_ball(cv, 186, 125, 9, (250, 130, 40), "2")
+    glossy_ball(cv, 224, 126, 9, (60, 140, 240), "16")
+    glossy_ball(cv, 60, 127, 9, (190, 90, 230), "4")
     return cv
 
 
@@ -975,6 +975,10 @@ def save_scaled(name, img, k):
 os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
 title_rgb = to_rgb(title_pal, title_idx)
 text(title_rgb, 9, 16, "PRESS START")
+for x in range(8, 232):                 # the best-score strip drawn in game
+    for y in range(136, 160):
+        title_rgb[y][x] = FONT_PAL[3] if 8 < x < 231 and 136 < y < 159 else FONT_PAL[4]
+text(title_rgb, 3, 18, "BEST ROUND 3  LAUNCH 347", FONT_PAL[6])
 save_scaled("preview_title.png", title_rgb, 3)
 for n, t in enumerate(BOARD_THEMES):
     save_scaled(f"preview_board_{t['name']}.png", board_preview(n), 2)

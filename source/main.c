@@ -339,7 +339,8 @@ static void draw_title_text(void)
         p = put_num(p, save.best_round);
         p = put_str(p, "  LAUNCH ");
         put_num(p, save.best_score);
-        text_center(17, buf, TXT_GOLD);
+        panel(17, 28, 3);                   // a solid strip so it reads over the sky
+        text_center(18, buf, TXT_HILITE);
     }
 }
 
