@@ -940,42 +940,161 @@ def text(img, tx, ty, s, fg=(255, 255, 255)):
                     img[ty * 8 + r][(tx + i) * 8 + c + 1] = fg
 
 
-def board_preview(n):
-    pal, _, idx = board_imgs[n]
+PEG_BLIT = peg_sprite(16, 7.6)
+ICON_BLIT_PAL = [(0, 0, 0)] + ICON_PAL[1:]
+
+
+def draw_peg(img, sx, sy, v, pal=None, digit=INK):
+    tier = min(len(TIERS) - 1, v.bit_length() - 1)
+    blit(img, PEG_BLIT, sx - 8, sy - 8, pal or [(0, 0, 0)] + TIER_PALS[tier])
+    digits = str(v)
+    w = len(digits) * 4 - 1
+    for k, ch in enumerate(digits):
+        for r, row in enumerate(DIGITS3[int(ch)]):
+            for c, p in enumerate(row):
+                if p == "#":
+                    img[sy - 3 + r][sx - w // 2 + k * 4 + c] = digit
+
+
+def draw_panel(img, y, w, h):
+    """Same look as the in-game panel frame tiles."""
+    x0 = (30 - w) // 2 * 8
+    x1, y0, y1 = x0 + w * 8, y * 8, (y + h) * 8
+    for py in range(y0, y1):
+        for px in range(x0, x1):
+            e = min(px - x0, x1 - 1 - px, py - y0, y1 - 1 - py)
+            img[py][px] = FONT_PAL[5] if e == 0 else FONT_PAL[4] if e == 1 else \
+                FONT_PAL[7] if e == 2 and (px - x0 == 2 or py - y0 == 2) else FONT_PAL[3]
+
+
+def center(img, ty, s, fg=(255, 255, 255)):
+    text(img, (30 - len(s)) // 2, ty, s, fg)
+
+
+def shade_all(img, k):
+    for row in img:
+        row[:] = [scale(c, k) for c in row]
+
+
+def scene(theme, values, round_="4", goal="38", score="12", lives="3", coins="7",
+          items=(2, 3, 5, 7), perks=(0, 5), shop_in="2", boss=False, armor=(), nubby=None, aim=True):
+    pal, _, idx = board_imgs[theme]
     img = to_rgb(pal, idx)
-    disc16 = peg_sprite(16, 7.6)
-    values = [1, 2, 1, 4, 2, 8, 1, 0, 2, 16, 4, 1, 2, 32, 1, 0, 4, 2, 8, 1, 2]
-    for (sx, sy), v in zip(SLOTS, values):
-        if not v:
-            continue
-        tier = min(len(TIERS) - 1, v.bit_length() - 1)
-        blit(img, disc16, sx - 8, sy - 8, [(0, 0, 0)] + TIER_PALS[tier])
-        digits = str(v)
-        w = len(digits) * 4 - 1
-        for k, ch in enumerate(digits):
-            for r, row in enumerate(DIGITS3[int(ch)]):
-                for c, p in enumerate(row):
-                    if p == "#":
-                        img[sy - 3 + r][sx - w // 2 + k * 4 + c] = INK
-    blit(img, nubby_sprite(False), LAUNCH_X - 4, LAUNCH_Y - 4, NUBBY_PAL)
-    for k in range(1, 7):
-        x, y = LAUNCH_X + k * 3, LAUNCH_Y + k * 4 + k * k // 4
-        blit(img, dot, x - 4, y - 4, NUBBY_PAL)
-    for row, s in ((1, "ROUND"), (2, "    4"), (4, "GOAL"), (5, "   38"), (7, "SCORE"), (8, "   12"),
-                   (10, "LIVES"), (11, "    3")):
-        text(img, 0, row, s)
+    armor_pal = [(0, 0, 0), scale(STEEL, 0.4), scale(STEEL, 0.75), STEEL, (220, 228, 245)]
+    for i, ((sx, sy), v) in enumerate(zip(SLOTS, values)):
+        if v:
+            if i in armor:
+                draw_peg(img, sx, sy, v, armor_pal, (255, 255, 255))
+            else:
+                draw_peg(img, sx, sy, v)
+    nx, ny = nubby or (LAUNCH_X, LAUNCH_Y)
+    blit(img, nubby_sprite(False), nx - 4, ny - 4, NUBBY_PAL)
+    if aim:
+        for k in range(1, 7):
+            x, y = LAUNCH_X + k * 3, LAUNCH_Y + k * 4 + k * k // 4
+            blit(img, dot, x - 4, y - 4, NUBBY_PAL)
+    if boss:
+        text(img, 0, 1, "BOSS!", FONT_PAL[6])
+    else:
+        text(img, 0, 1, "ROUND")
+    for row, sv in ((2, round_), (5, goal), (8, score), (11, lives)):
+        text(img, 0, row, sv.rjust(5))
+    for row, sv in ((4, "GOAL"), (7, "SCORE"), (10, "LIVES")):
+        text(img, 0, row, sv)
     text(img, 25, 1, "COINS")
-    text(img, 25, 2, "    7")
+    text(img, 25, 2, coins.rjust(5))
     text(img, 25, 3, "ITEMS")
-    icon_pal = [(0, 0, 0)] + ICON_PAL[1:]
-    text(img, 25, 4, "  4/5")
-    for i, it in enumerate((2, 3, 5, 7)):
-        blit(img, icon_sprite(*ICONS[it]), 214, 41 + i * 15, icon_pal)
+    text(img, 25, 4, " FULL" if len(items) == 5 else f"  {len(items)}/5", FONT_PAL[6] if len(items) == 5 else (255, 255, 255))
+    for i, it in enumerate(items):
+        blit(img, icon_sprite(*ICONS[it]), 214, 41 + i * 15, ICON_BLIT_PAL)
     text(img, 25, 15, "SHOP")
-    text(img, 25, 16, "IN  2")
-    text(img, 0, 13, "PERKS")
-    for i, pk in enumerate((0, 5)):
-        blit(img, icon_sprite(*PERK_ICONS[pk], True), 2 + (i % 2) * 18, 112 + (i // 2) * 18, icon_pal)
+    text(img, 25, 16, "IN" + shop_in.rjust(3))
+    if perks:
+        text(img, 0, 13, "PERKS")
+    for i, pk in enumerate(perks):
+        blit(img, icon_sprite(*PERK_ICONS[pk], True), 2 + (i % 2) * 18, 112 + (i // 2) * 18, ICON_BLIT_PAL)
+    return img
+
+
+BOARD_VALUES = [1, 2, 1, 4, 2, 8, 1, 0, 2, 16, 4, 1, 2, 32, 1, 0, 4, 2, 8, 1, 2]
+
+
+def board_preview(n):
+    return scene(n, BOARD_VALUES)
+
+
+def laser_scene():
+    vals = [4, 8, 4, 2, 8, 16, 8, 4, 0, 8, 4, 16, 8, 16, 4, 8, 4, 2, 16, 8, 4]
+    img = scene(1, vals, round_="5", goal="96", score="40", coins="9", items=(3, 5, 1), perks=(1,),
+                shop_in="2", boss=True, nubby=(96, 70), aim=False)
+    for y in range(8):
+        for x in range(BOARD_L, BOARD_R):
+            img[96 - 4 + y][x] = FX_PAL[[1, 2, 3, 4, 4, 3, 2, 1][y]]
+    return img
+
+
+def armor_scene():
+    vals = [16, 8, 16, 32, 8, 64, 16, 8, 32, 16, 8, 16, 64, 8, 32, 16, 8, 16, 32, 8, 16]
+    img = scene(2, vals, round_="15", goal="412", score="136", lives="2", coins="4", items=(3, 5, 7, 8, 10),
+                perks=(0, 2, 6), shop_in="1", boss=True, armor=(3, 5, 8, 12, 14, 18), nubby=(150, 108), aim=False)
+    return img
+
+
+def shop_scene():
+    img = scene(0, BOARD_VALUES, aim=False)
+    shade_all(img, 0.25)
+    draw_panel(img, 1, 28, 18)
+    center(img, 2, "SHOP", FONT_PAL[6])
+    center(img, 3, "COINS 7   ITEMS 4/5", FONT_PAL[6])
+    for s, (it, name, price) in enumerate(((0, "SPRINGS", 6), (4, "DOUBLER", 5), (10, "HEART", 7))):
+        row = 5 + s * 3
+        blit(img, icon_sprite(*ICONS[it]), 24, 36 + s * 24, ICON_BLIT_PAL)
+        if s == 1:
+            text(img, 2, row, ">", FONT_PAL[6])
+        text(img, 6, row, name, FONT_PAL[6] if s == 1 else (255, 255, 255))
+        text(img, 18, row, f"{price} COINS", (255, 255, 255) if price <= 7 else FONT_PAL[8])
+    text(img, 6, 14, "NEXT ROUND")
+    center(img, 16, "FIRST PEG POPPED:")
+    center(img, 17, "DOUBLE A RANDOM PEG", FONT_PAL[6])
+    return img
+
+
+def boss_intro_scene():
+    vals = [2, 4, 2, 8, 4, 16, 4, 2, 8, 4, 8, 2, 4, 8, 16, 4, 2, 8, 4, 2, 4]
+    img = scene(0, vals, round_="10", goal="87", score="0", coins="6", items=(1, 2, 6), perks=(3,),
+                shop_in="1", boss=True, aim=False)
+    for k in range(10):                      # wind streaks
+        x = (k * 53 + 40) % 160
+        blit(img, [[0] * 8, [0] * 8, [0] * 8, [0, 5, 5, 5, 6, 6, 6, 0], [0, 0, 5, 5, 5, 5, 0, 0]],
+             BOARD_L + x - 4, 24 + k * 13, FX_PAL)
+    shade_all(img, 1 - 9 / 16)
+    draw_panel(img, 4, 24, 12)
+    center(img, 5, "BOSS ROUND!", FONT_PAL[6])
+    center(img, 7, "WIND TUNNEL", FONT_PAL[6])
+    center(img, 9, "GUSTS PUSH NUBBY")
+    center(img, 10, "LEFT AND RIGHT")
+    center(img, 12, "WIN FOR +3 COINS")
+    center(img, 14, "PRESS A")
+    return img
+
+
+def inventory_scene():
+    img = scene(1, BOARD_VALUES, items=(3, 5, 7, 8), perks=(0, 2), aim=False)
+    shade_all(img, 0.25)
+    draw_panel(img, 2, 28, 16)
+    center(img, 3, "ITEMS AND PERKS", FONT_PAL[6])
+    center(img, 4, "ITEM 2 OF 4")
+    owned = [("i", 3), ("i", 5), ("i", 7), ("i", 8), ("p", 0), ("p", 2)]
+    x = 120 - len(owned) * 9
+    lit_pal = [ICON_PAL[0]] + [mix(c, (255, 255, 255), 0.55) for c in ICON_PAL[1:]]
+    for k, (kind, n) in enumerate(owned):
+        spr = icon_sprite(*ICONS[n]) if kind == "i" else icon_sprite(*PERK_ICONS[n], True)
+        blit(img, spr, x + k * 18, 44 if k == 1 else 48, lit_pal if k == 1 else ICON_BLIT_PAL)
+    center(img, 9, "RICOCHET", FONT_PAL[6])
+    center(img, 11, "WALL BOUNCE:")
+    center(img, 12, "POP A RANDOM PEG")
+    center(img, 15, "LEFT AND RIGHT TO BROWSE")
+    center(img, 16, "B TO GO BACK")
     return img
 
 
@@ -986,7 +1105,7 @@ def save_scaled(name, img, k):
 
 os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
 title_rgb = to_rgb(title_pal, title_idx)
-text(title_rgb, 9, 16, "PRESS START")
+text(title_rgb, 9, 15, "PRESS START")
 for x in range(8, 232):                 # the best-score strip drawn in game
     for y in range(136, 160):
         title_rgb[y][x] = FONT_PAL[3] if 8 < x < 231 and 136 < y < 159 else FONT_PAL[4]
@@ -994,4 +1113,7 @@ text(title_rgb, 3, 18, "BEST ROUND 3  LAUNCH 347", FONT_PAL[6])
 save_scaled("preview_title.png", title_rgb, 3)
 for n, t in enumerate(BOARD_THEMES):
     save_scaled(f"preview_board_{t['name']}.png", board_preview(n), 2)
+for name, fn in (("laser", laser_scene), ("armor", armor_scene), ("shop", shop_scene),
+                 ("boss_intro", boss_intro_scene), ("inventory", inventory_scene)):
+    save_scaled(f"preview_{name}.png", fn(), 2)
 print("sprite tiles:", len(obj_tiles) // 8, " font tiles:", len(font_tiles) // 8)

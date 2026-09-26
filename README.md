@@ -6,7 +6,14 @@ A number-popping roguelike for the Game Boy Advance, loosely inspired by
 *Nubby's Number Factory*. Aim Nubby from the launcher, bounce it off the walls
 and pop the numbered pegs to hit each round's quota in a single launch.
 
-![A round in progress](docs/board.png)
+| | |
+| :---: | :---: |
+| ![Aiming a launch](docs/board.png) | ![The shop](docs/shop.png) |
+| Aim with the dotted guide | Spend coins in the shop |
+| ![Laser Grid boss](docs/laser.png) | ![Armour Plating boss](docs/armor.png) |
+| Laser Grid boss wipes out a row | Armour Plating boss: steel pegs take a hit first |
+| ![Wind Tunnel boss intro](docs/boss-intro.png) | ![Items and perks from the pause menu](docs/inventory.png) |
+| Every 5th round is a boss round | Check your items and perks from the pause menu |
 
 > **Made with AI:** this game was built with [Claude](https://claude.ai), Anthropic's
 > AI model, using Claude Code. The code, artwork, music and documentation were
