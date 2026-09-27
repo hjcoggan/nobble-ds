@@ -1,9 +1,9 @@
 #include "game.h"
 
 #define FIX(n) ((n) << 8)
-#define GRAVITY 12                 // 8.8 px/frame^2
-#define LAUNCH_SPEED (3 * 256)     // 8.8 px/frame
-#define MAX_SPEED FIX(5)
+#define GRAVITY 22                 // 8.8 px/frame^2
+#define LAUNCH_SPEED (4 * 256)     // 8.8 px/frame
+#define MAX_SPEED FIX(7)
 #define SUBSTEPS 2
 #define PEG_BOUNCE 230             // restitution off pegs, 8.8
 #define WALL_BOUNCE 230
@@ -11,7 +11,8 @@
 #define MAX_RICOCHETS 6            // ricochet pops per launch
 #define WIND_PUSH 6          // sideways push per frame in the wind tunnel
 #define WIND_FLIP 90         // frames between wind changes
-#define LASER_EVERY 110      // frames between laser shots
+#define LASER_EVERY 160      // frames between laser shots
+#define QUOTA_STEP 25        // quota rises 2.5% of the board each round
 #define MAX_DEPTH 2                // items triggering items triggering items
 
 // 6 rows alternating 4 and 3 pegs
@@ -22,17 +23,17 @@ const BossInfo boss_info[NUM_BOSSES] = {
     [BOSS_ARMOR] = { "ARMOUR PLATING", "ARMOURED PEGS NEED",   "A HIT TO CRACK FIRST" },
 };
 
-static const int16_t row_y[NUM_ROWS] = { 42, 60, 78, 96, 114, 132 };
+static const int16_t row_y[NUM_ROWS] = { 46, 70, 94, 118, 142, 166 };
 
 int game_row_y(int row) { return row_y[row]; }
 
 const Slot slots[NUM_SLOTS] = {
-    { 66, 42 }, { 102, 42 }, { 138, 42 }, { 174, 42 },
-    { 84, 60 }, { 120, 60 }, { 156, 60 },
-    { 66, 78 }, { 102, 78 }, { 138, 78 }, { 174, 78 },
-    { 84, 96 }, { 120, 96 }, { 156, 96 },
-    { 66, 114 }, { 102, 114 }, { 138, 114 }, { 174, 114 },
-    { 84, 132 }, { 120, 132 }, { 156, 132 },
+    { 51, 46 }, { 89, 46 }, { 127, 46 }, { 165, 46 }, { 203, 46 },
+    { 32, 70 }, { 70, 70 }, { 108, 70 }, { 146, 70 }, { 184, 70 }, { 222, 70 },
+    { 51, 94 }, { 89, 94 }, { 127, 94 }, { 165, 94 }, { 203, 94 },
+    { 32, 118 }, { 70, 118 }, { 108, 118 }, { 146, 118 }, { 184, 118 }, { 222, 118 },
+    { 51, 142 }, { 89, 142 }, { 127, 142 }, { 165, 142 }, { 203, 142 },
+    { 32, 166 }, { 70, 166 }, { 108, 166 }, { 146, 166 }, { 184, 166 }, { 222, 166 },
 };
 
 const char *const trigger_text[NUM_TRIGGERS] = {
@@ -128,9 +129,9 @@ static int32_t new_peg_value(const Game *g) { return 1 << (g->round / 4); }
 // The quota is a share of everything on the board, rising each round.
 static int quota_for(const Game *g)
 {
-    int pct = 15 + (g->round - 1) * 3;
-    if (pct > 70) pct = 70;
-    int q = game_potential(g) * pct / 100;
+    int pct = 150 + (g->round - 1) * QUOTA_STEP;   // tenths of a percent
+    if (pct > 700) pct = 700;
+    int q = game_potential(g) * pct / 1000;
     return q < 5 ? 5 : q;
 }
 
@@ -657,6 +658,23 @@ void game_take_perk(Game *g, int choice)
 }
 
 // ---------------------------------------------------------------- aim guide
+
+int game_aim_at(int x, int y)
+{
+    int32_t dx = x - LAUNCH_X, dy = y - LAUNCH_Y;
+    if (dy <= 0) return dx < 0 ? -AIM_MAX : AIM_MAX;      // touched above the launcher
+    int best = 0;
+    int32_t best_err = 0x7FFFFFFF;
+    for (int a = -AIM_MAX; a <= AIM_MAX; a++) {
+        int32_t err = isin(a) * dy - icos(a) * dx;         // 0 when the angle points at (x, y)
+        if (err < 0) err = -err;
+        if (err < best_err) {
+            best_err = err;
+            best = a;
+        }
+    }
+    return best;
+}
 
 int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
 {

@@ -1,4 +1,6 @@
-// Best results, kept in cartridge SRAM.
+// Best results, kept in a small file on the SD card (flash carts, or an
+// emulator's DLDI SD image). If there is no card the game still runs, it just
+// can't remember scores between sessions.
 #ifndef SAVE_H
 #define SAVE_H
 
@@ -10,8 +12,9 @@ typedef struct {
 } SaveData;
 
 extern SaveData save;
+extern int save_available;
 
-void save_load(void);         // falls back to defaults if SRAM is blank or corrupt
+void save_load(void);         // falls back to defaults if there's no file or it's corrupt
 void save_write(void);
 
 #endif

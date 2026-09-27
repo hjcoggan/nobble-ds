@@ -1,108 +1,141 @@
-#include "gba.h"
+// Nubby DS: the board on the touch screen, the dashboard on the top screen.
+#include <nds.h>
+#include <stdio.h>
 #include "assets.h"
 #include "game.h"
+#include "gfx.h"
 #include "sound.h"
 #include "save.h"
-#include "ui.h"
 
-#define MAP_SBB 31
-#define PAUSE_DIM 9               // 0-16 brightness decrease behind menus
-#define RESULT_FRAMES 100
-#define AIM_DOTS 8
+#include "title_top_bin.h"
+#include "title_bottom_bin.h"
+#include "dashboard_bin.h"
+#include "board0_bin.h"
+#include "board1_bin.h"
+#include "board2_bin.h"
 
-// OAM slots
+static const uint8_t *const boards[NUM_BOARDS] = { board0_bin, board1_bin, board2_bin };
+
+#define PAUSE_DIM 9               // 0-16 darkening behind menus
+#define SHOP_DIM 12
+#define RESULT_FRAMES 120
+#define AIM_DOTS 12
+#define NUM_SPARKS 40
+
+// bottom screen sprites (lower ids draw on top)
 #define OBJ_NUBBY 0
-#define OBJ_ICON  1               // 5 slots: owned items, or shop wares / perk choices
-#define OBJ_PERK  (OBJ_ICON + MAX_ITEMS)
-#define OBJ_DOT   (OBJ_PERK + MAX_PERKS)   // aim guide
+#define OBJ_PAUSE 1
+#define OBJ_POPUP 2               // NUM_POPUPS score popups
+#define OBJ_SPARK (OBJ_POPUP + NUM_POPUPS)
+#define OBJ_DOT   (OBJ_SPARK + NUM_SPARKS)
 #define OBJ_PEG   (OBJ_DOT + AIM_DOTS)
-#define OBJ_FX    (OBJ_PEG + NUM_SLOTS)   // boss laser beam or wind streaks (20)
+#define OBJ_FX    (OBJ_PEG + NUM_SLOTS)      // laser beam or wind streaks (10)
+#define OBJ_UI    (OBJ_FX + 10)              // icons on menus and cards
+// top screen sprites
+#define TOP_FACE 0
+#define TOP_HEART 1               // up to 8
+#define TOP_COIN 9
+#define TOP_ITEM 10               // MAX_ITEMS
+#define TOP_PERK (TOP_ITEM + MAX_ITEMS)
+#define TOP_DETAIL (TOP_PERK + MAX_PERKS)
 
-// each slot's peg has its own 16x16 sprite with its number drawn on
-#define PEG_TILE(i) (TILE_FREE + (i) * 4)
+// runtime sprite tiles: each peg's number is drawn onto its own sprite
+#define PEG_TILE(i) (TILE_FREE + (i) * PEG_TILES)
+#define POPUP_TILE(i) (TILE_FREE + NUM_SLOTS * PEG_TILES + (i) * POPUP_TILES)
 
-#define ATTR1_SIZE16 0x4000
+// Nubby's face in the dashboard window (see tools/gen_assets.py)
+#define FACE_X 180
+#define FACE_Y 24
 
 typedef enum {
-    ST_TITLE, ST_MENU, ST_HOWTO, ST_CREDITS,
-    ST_AIM, ST_FLY, ST_RESULT, ST_PERK, ST_SHOP, ST_PAUSE, ST_INVENTORY, ST_BOSS, ST_OVER,
+    ST_TITLE, ST_HOWTO, ST_CREDITS,
+    ST_AIM, ST_FLY, ST_RESULT, ST_PERK, ST_SHOP, ST_SWAP, ST_PAUSE, ST_INVENTORY, ST_BOSS, ST_OVER,
 } State;
 
-enum { MAIN_PLAY, MAIN_HOWTO, MAIN_CREDITS, MAIN_COUNT };
-enum { PAUSE_RESUME, PAUSE_INVENTORY, PAUSE_QUIT, PAUSE_COUNT };
+enum { FACE_HAPPY, FACE_BLINK, FACE_WOW, FACE_WORRY };
 
-static uint16_t oam[128 * 4];
 static Game game;
 static State state, paused_from;
 static Result last_result;
 static int frames, timer, menu_sel, aim, best_launch;
-static int inv_sel;                // which owned item or perk the pause screen shows
-static int swap_for = -1;          // shop slot being bought with full hands, -1 if not swapping
+static int inv_sel, swap_for = -1, shop_sel;
 static int credits_scroll, credits_rows;
-static int32_t shown[NUM_SLOTS];  // value currently drawn on each peg sprite
+static int face, face_timer, shake_timer;
+static int32_t shown[NUM_SLOTS];      // value currently drawn on each peg sprite
+static int32_t prev_pegs[NUM_SLOTS];  // to spot pops and laser hits
 static uint32_t seed = 0x5EED1234;
-static uint16_t keys, prev_keys;
 
-// ---------------------------------------------------------------- video
+// input for this frame
+static uint32_t pressed, held;
+static int touching, tapped, released, tx, ty;
+static int aiming_by_touch;
 
-static void load_bg(const uint16_t *pal, const uint32_t *tiles)
+static const char *const trigger_short[NUM_TRIGGERS] = {
+    "ALWAYS", "ON LAUNCH", "FIRST POP", "PEG GONE", "WALL HIT", "FALLS OUT", "EVERY 8",
+};
+static const char *const perk_short[NUM_PERKS] = {
+    "EVERY 3 SEC", "EVERY 1 SEC", "FIRST POP", "FALLS OUT", "WALL HIT", "GOAL MET", "TOP PEG HIT", "15 POPS",
+};
+
+// ---------------------------------------------------------------- input
+
+static void read_input(void)
 {
-    PAL_BG[0] = pal[0];
-    for (int i = BG_FIRST_COLOR; i < 256; i++) PAL_BG[i] = pal[i];
-    volatile uint32_t *d = CHARBLOCK(0);
-    for (int i = 0; i < BG_IMG_WORDS; i++) d[i] = tiles[i];
+    scanKeys();
+    pressed = keysDown();
+    held = keysHeld();
+    uint32_t up = keysUp();
+    touching = (held & KEY_TOUCH) != 0;
+    tapped = (pressed & KEY_TOUCH) != 0;
+    released = (up & KEY_TOUCH) != 0;
+    if (touching) {
+        touchPosition tp;
+        touchRead(&tp);
+        tx = tp.px;
+        ty = tp.py;
+    }
+    seed = seed * 1664525u + 1013904223u + held + tx * 7 + ty;
 }
 
-static void init_video(void)
+static int tapped_in(int x, int y, int w, int h)    // pixels
 {
-    REG_DISPCNT = 0x0080;         // forced blank while loading
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0 | BLD_BG1 | BLD_OBJ | BLD_BD;
-    REG_BLDY = 16;                // start black, screens fade in
-
-    for (int i = 0; i < 16; i++) PAL_BG[16 + i] = font_pal[i];
-    for (int i = 0; i < (int)(sizeof(obj_pal) / 2); i++) PAL_OBJ[i] = obj_pal[i];
-
-    volatile uint32_t *d = CHARBLOCK(FONT_CBB);
-    for (int i = 0; i < (int)(sizeof(font_tiles) / 4); i++) d[i] = font_tiles[i];
-    for (int i = 0; i < (int)(sizeof(obj_tiles) / 4); i++) OBJ_TILES[i] = obj_tiles[i];
-
-    volatile uint16_t *map = SCREENBLOCK(MAP_SBB);
-    for (int y = 0; y < 32; y++)
-        for (int x = 0; x < 32; x++)
-            map[y * 32 + x] = (x < 30 && y < 20) ? y * 30 + x : 0;
-    text_clear();
-
-    REG_BG0CNT = BG_PRIO(3) | BG_CBB(0) | BG_SBB(MAP_SBB) | BG_8BPP;
-    REG_BG1CNT = BG_PRIO(0) | BG_CBB(FONT_CBB) | BG_SBB(TEXT_SBB);
-
-    for (int i = 0; i < 128; i++) oam[i * 4] = ATTR0_HIDE;
-    for (int i = 0; i < NUM_SLOTS; i++) shown[i] = -1;
-    REG_DISPCNT = DCNT_MODE0 | DCNT_BG0 | DCNT_BG1 | DCNT_OBJ | DCNT_OBJ_1D;
+    return tapped && tx >= x && tx < x + w && ty >= y && ty < y + h;
 }
 
-static void dim(int on, int level)
+// ---------------------------------------------------------------- buttons
+
+typedef struct {
+    int x, y, w, h;         // tiles
+    const char *label;
+} Button;
+
+static void draw_buttons(const Button *b, int n, int sel)
 {
-    REG_BLDCNT = on ? (BLD_DARKEN | BLD_BG0 | BLD_OBJ) : 0;
-    REG_BLDY = level;
+    for (int i = 0; i < n; i++) {
+        panel(BOT, b[i].x, b[i].y, b[i].w, b[i].h);
+        text_center_in(BOT, b[i].x, b[i].w, b[i].y + b[i].h / 2, b[i].label, i == sel ? TXT_HILITE : TXT_PANEL);
+    }
 }
 
-static void set_obj(int n, int x, int y, uint16_t a1size, uint16_t a2)
+// The button tapped this frame, or chosen with the d-pad and A. -1 if none.
+static int buttons_update(const Button *b, int n, int *sel)
 {
-    oam[n * 4 + 0] = y & 255;
-    oam[n * 4 + 1] = (x & 511) | a1size;
-    oam[n * 4 + 2] = a2;
-}
-
-static void hide_obj(int n) { oam[n * 4] = ATTR0_HIDE; }
-
-static void icon_obj(int n, int item, int x, int y, int prio, int lit)
-{
-    set_obj(n, x, y, ATTR1_SIZE16, TILE_ICON(item) | ATTR2_PRIO(prio) | ATTR2_PAL(lit ? PAL_ICON_FLASH : PAL_ICON));
-}
-
-static void perk_obj(int n, int perk, int x, int y, int prio, int lit)
-{
-    set_obj(n, x, y, ATTR1_SIZE16, TILE_PERK(perk) | ATTR2_PRIO(prio) | ATTR2_PAL(lit ? PAL_ICON_FLASH : PAL_ICON));
+    for (int i = 0; i < n; i++)
+        if (tapped_in(b[i].x * 8, b[i].y * 8, b[i].w * 8, b[i].h * 8)) {
+            *sel = i;
+            return i;
+        }
+    if (n > 1 && (pressed & KEY_UP)) {
+        *sel = (*sel + n - 1) % n;
+        sfx_move();
+        draw_buttons(b, n, *sel);
+    }
+    if (n > 1 && (pressed & KEY_DOWN)) {
+        *sel = (*sel + 1) % n;
+        sfx_move();
+        draw_buttons(b, n, *sel);
+    }
+    return (pressed & KEY_A) ? *sel : -1;
 }
 
 // ---------------------------------------------------------------- numbered pegs
@@ -112,47 +145,55 @@ static const uint16_t digits3x5[11] = {
     0x7B6F, 0x2C97, 0x73E7, 0x73CF, 0x5BC9, 0x79CF, 0x79EF, 0x7252, 0x7BEF, 0x7BCF, 0x5D35,
 };
 
-static void peg_pixel(uint32_t *buf, int x, int y, int c)
+// set pixel (x, y) of a sprite `wt` tiles wide, in a 4bpp buffer
+static void spx(uint32_t *buf, int wt, int ht, int x, int y, int c)
 {
-    int word = ((y >> 3) * 2 + (x >> 3)) * 8 + (y & 7);
+    if (x < 0 || y < 0 || x >= wt * 8 || y >= ht * 8) return;
+    int word = ((y >> 3) * wt + (x >> 3)) * 8 + (y & 7);
     int shift = (x & 7) * 4;
     buf[word] = (buf[word] & ~(0xFu << shift)) | ((uint32_t)c << shift);
 }
 
-// Redraw slot i's sprite: the disc template with the number on top.
+static int digits_of(int32_t v, int *out)
+{
+    int tmp[8], m = 0, n = 0;
+    do {
+        tmp[m++] = v % 10;
+        v /= 10;
+    } while (v && m < 8);
+    while (m) out[n++] = tmp[--m];
+    return n;
+}
+
+static void copy_to_vram(int tile, const uint32_t *buf, int words)
+{
+    volatile uint32_t *dst = spr_tiles(BOT, tile);
+    for (int w = 0; w < words; w++) dst[w] = buf[w];
+}
+
+// Redraw slot i's 32x32 sprite: the disc template with the number on top.
 static void render_peg(int i, int32_t v)
 {
-    uint32_t buf[32];
-    for (int w = 0; w < 32; w++) buf[w] = obj_tiles[TILE_PEG * 8 + w];
-
-    int glyphs[4], n = 0;
-    if (v >= 10000) {                     // 12K, 999K
-        int k = v / 1000;
-        if (k > 999) k = 999;
-        int tmp[3], m = 0;
-        do {
-            tmp[m++] = k % 10;
-            k /= 10;
-        } while (k);
-        while (m) glyphs[n++] = tmp[--m];
-        glyphs[n++] = 10;
-    } else {
-        int tmp[4], m = 0;
-        do {
-            tmp[m++] = v % 10;
-            v /= 10;
-        } while (v);
-        while (m) glyphs[n++] = tmp[--m];
+    uint32_t buf[PEG_TILES * 8];
+    for (int w = 0; w < PEG_TILES * 8; w++) buf[w] = obj_tiles[TILE_PEG * 8 + w];
+    int d[8], n;
+    if (v < 100) {                              // big 5x7 digits
+        n = digits_of(v, d);
+        int x0 = 16 - (n * 6 - 1) / 2;
+        for (int g = 0; g < n; g++)
+            for (int r = 0; r < 7; r++)
+                for (int c = 0; c < 5; c++)
+                    if (glyphs5x7[d[g]][r] & (0x10 >> c)) spx(buf, 4, 4, x0 + g * 6 + c, 13 + r, 5);
+    } else {                                    // small 3x5 digits, K for thousands
+        n = digits_of(v >= 10000 ? v / 1000 : v, d);
+        if (v >= 10000) d[n++] = 10;
+        int x0 = 16 - (n * 4 - 1) / 2;
+        for (int g = 0; g < n; g++)
+            for (int r = 0; r < 5; r++)
+                for (int c = 0; c < 3; c++)
+                    if (digits3x5[d[g]] & (1 << (14 - r * 3 - c))) spx(buf, 4, 4, x0 + g * 4 + c, 14 + r, 5);
     }
-    int x0 = (16 - (n * 4 - 1)) / 2;
-    for (int g = 0; g < n; g++) {
-        uint16_t bits = digits3x5[glyphs[g]];
-        for (int r = 0; r < 5; r++)
-            for (int c = 0; c < 3; c++)
-                if (bits & (1 << (14 - r * 3 - c))) peg_pixel(buf, x0 + g * 4 + c, 5 + r, 5);
-    }
-    volatile uint32_t *dst = OBJ_TILES + PEG_TILE(i) * 8;
-    for (int w = 0; w < 32; w++) dst[w] = buf[w];
+    copy_to_vram(PEG_TILE(i), buf, PEG_TILES * 8);
 }
 
 static int tier(int32_t v)
@@ -165,81 +206,257 @@ static int tier(int32_t v)
     return t;
 }
 
+// ---------------------------------------------------------------- effects: sparks and score popups
+
+typedef struct {
+    int x, y, vx, vy;       // 8.8 fixed point
+    int life, pal;
+} Spark;
+
+typedef struct {
+    int x, y, life;
+} Popup;
+
+static Spark sparks[NUM_SPARKS];
+static Popup popups[NUM_POPUPS];
+static int next_popup;
+
+static void burst(int x, int y, int pal, int n)
+{
+    for (int k = 0; k < NUM_SPARKS && n; k++) {
+        Spark *s = &sparks[k];
+        if (s->life) continue;
+        uint32_t r = game_rand(&game);
+        s->x = x << 8;
+        s->y = y << 8;
+        s->vx = (int)(r & 1023) - 512;
+        s->vy = (int)((r >> 10) & 511) - 700;
+        s->life = 18 + (r >> 20) % 14;
+        s->pal = pal;
+        n--;
+    }
+}
+
+// Draw "+v" into the next popup sprite (32x16) and float it up from (x, y).
+static void popup(int x, int y, int32_t v)
+{
+    static const uint8_t plus[7] = { 0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00 };
+    uint32_t buf[POPUP_TILES * 8] = { 0 };
+    int d[8], n = digits_of(v, d);
+    if (n > 4) n = 4;
+    int x0 = 16 - ((n + 1) * 6 - 1) / 2;
+    for (int pass = 0; pass < 2; pass++)
+        for (int g = 0; g <= n; g++) {
+            const uint8_t *rows = g == 0 ? plus : glyphs5x7[d[g - 1]];
+            for (int r = 0; r < 7; r++)
+                for (int c = 0; c < 5; c++) {
+                    if (!(rows[r] & (0x10 >> c))) continue;
+                    int px = x0 + g * 6 + c, py = 4 + r;
+                    if (pass == 0) {                                 // dark outline first
+                        for (int oy = -1; oy <= 1; oy++)
+                            for (int ox = -1; ox <= 1; ox++) spx(buf, 4, 2, px + ox, py + oy, 6);
+                    } else {
+                        spx(buf, 4, 2, px, py, r < 3 ? 13 : 11);
+                    }
+                }
+        }
+    int k = next_popup;
+    next_popup = (next_popup + 1) % NUM_POPUPS;
+    copy_to_vram(POPUP_TILE(k), buf, POPUP_TILES * 8);
+    popups[k].x = x - 16;
+    popups[k].y = y - 20;
+    popups[k].life = 40;
+}
+
+static void clear_effects(void)
+{
+    for (int k = 0; k < NUM_SPARKS; k++) sparks[k].life = 0;
+    for (int k = 0; k < NUM_POPUPS; k++) popups[k].life = 0;
+}
+
+static void set_face(int f, int t)
+{
+    face = f;
+    face_timer = t;
+}
+
+static void sync_board(void)
+{
+    for (int i = 0; i < NUM_SLOTS; i++) prev_pegs[i] = game.pegs[i];
+}
+
+// Compare the board with last frame: sparks and popups for pops, a red
+// burst where the laser struck. Returns the x of the last popped peg, or -1.
+static int board_effects(void)
+{
+    int px = -1;
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        int32_t was = prev_pegs[i], now = game.pegs[i];
+        if (now < was) {
+            if (game.flash[i] == FLASH_FRAMES) {           // popped
+                burst(slots[i].x, slots[i].y, PAL_TIER(tier(was)), now ? 4 : 9);
+                popup(slots[i].x, slots[i].y, was);
+                px = slots[i].x;
+                if (was >= 32) shake_timer = 4;
+            } else if (!now) {                                // lasered away
+                burst(slots[i].x, slots[i].y, PAL_FX, 8);
+            }
+        }
+        prev_pegs[i] = now;
+    }
+    return px;
+}
+
+// ---------------------------------------------------------------- the top screen dashboard
+
 static int on_board(void)
 {
     return state == ST_AIM || state == ST_FLY || state == ST_RESULT || state == ST_PAUSE ||
-           state == ST_BOSS || state == ST_OVER;
+           state == ST_BOSS || state == ST_OVER || state == ST_SHOP || state == ST_SWAP ||
+           state == ST_PERK || state == ST_INVENTORY;
 }
 
-static void draw_objects(void)
+enum { DETAIL_NONE = -1, DETAIL_ITEM, DETAIL_PERK };
+static int detail_kind = DETAIL_NONE, detail_id;   // what the big panel on the top screen shows
+static const char *detail_hint = "";
+
+static void show_detail(int kind, int id, const char *hint)
 {
-    for (int i = 0; i < 128; i++) hide_obj(i);
+    detail_kind = kind;
+    detail_id = id;
+    detail_hint = hint;
+}
 
-    if (state == ST_SHOP && swap_for >= 0) {
-        for (int i = 0; i < game.nitems; i++) icon_obj(OBJ_ICON + i, game.items[i], 24, 36 + i * 16, 0, 0);
-        return;
-    }
-    if (state == ST_SHOP) {
-        for (int s = 0; s < SHOP_SLOTS; s++)
-            if (game.shop[s] >= 0) icon_obj(OBJ_ICON + s, game.shop[s], 24, 36 + s * 24, 0, 0);
-        return;
-    }
-    if (state == ST_PERK) {
-        for (int c = 0; c < PERK_CHOICES; c++) perk_obj(OBJ_ICON + c, game.perk_offer[c], 24, 44 + c * 40, 0, 0);
-        return;
-    }
-    if (state == ST_INVENTORY) {
-        // everything owned in a row; the one being read is lit and raised
-        int n = game.nitems + game.nperks, x = 120 - n * 9;
-        for (int k = 0; k < n; k++, x += 18) {
-            int y = k == inv_sel ? 44 : 48;
-            if (k < game.nitems) icon_obj(OBJ_ICON + k, game.items[k], x, y, 0, k == inv_sel);
-            else perk_obj(OBJ_ICON + k, game.perks[k - game.nitems], x, y, 0, k == inv_sel);
+static void hud_text(void)
+{
+    char buf[40], *p;
+    text_clear(TOP);
+    // header: round and coins (hearts and the coin are sprites)
+    p = put_str(buf, "ROUND ");
+    put_num(p, game.round);
+    text_style(TOP, 1, 1, buf, game.boss ? TXT_GOLD : TXT_PLAIN);
+    text_num(TOP, 27, 1, game.coins, 4, TXT_GOLD);
+
+    if (detail_kind != DETAIL_NONE) {
+        panel(TOP, 1, 3, 30, 8);
+        if (detail_kind == DETAIL_ITEM) {
+            const ItemInfo *it = &item_info[detail_id];
+            text_style(TOP, 7, 4, it->name, TXT_HILITE);
+            p = put_num(buf, it->price);
+            put_str(p, " COINS");
+            text_style(TOP, 20, 4, buf, game.coins >= it->price ? TXT_PANEL : TXT_DIM);
+            text_style(TOP, 7, 6, trigger_text[it->trigger], TXT_PANEL);
+            text_style(TOP, 7, 7, it->effect, TXT_HILITE);
+        } else {
+            const PerkInfo *pk = &perk_info[detail_id];
+            text_style(TOP, 7, 4, pk->name, TXT_HILITE);
+            text_style(TOP, 7, 6, pk->line1, TXT_PANEL);
+            text_style(TOP, 7, 7, pk->line2, TXT_HILITE);
         }
-        return;
+        text_center_in(TOP, 1, 30, 9, detail_hint, TXT_PANEL);
+    } else {
+        text_style(TOP, 2, 3, "SCORE", TXT_LCD);
+        big_number(TOP, 2, 4, game.score, 8);
+        p = put_str(buf, "GOAL ");
+        put_num(p, game.quota);
+        text_style(TOP, 2, 7, buf, TXT_LCD);
+        int met = game.score >= game.quota;
+        progress_bar(TOP, 2, 8, 18, game.score, game.quota, met);
+        if (met) {
+            int r = game.score / game.quota;
+            p = put_str(buf, "RESTOCKS ");
+            put_num(p, r > MAX_RESTOCKS ? MAX_RESTOCKS : r);
+            text_style(TOP, 2, 9, buf, TXT_GOLD);
+        } else if (state == ST_FLY) {
+            p = put_str(buf, "NEED ");
+            put_num(p, game.quota - game.score);
+            p = put_str(p, " MORE");
+            text_style(TOP, 2, 9, buf, TXT_LCD);
+        }
     }
-    if (!on_board()) return;
 
+    // status line
+    if (game.boss) {
+        p = put_str(buf, "BOSS: ");
+        put_str(p, boss_info[game.boss].name);
+        text_center(TOP, 11, buf, TXT_GOLD);
+    } else {
+        int until = SHOP_EVERY - (game.round - 1) % SHOP_EVERY;
+        p = put_str(buf, "NEXT SHOP IN ");
+        p = put_num(p, until);
+        put_str(p, until == 1 ? " ROUND" : " ROUNDS");
+        text_center(TOP, 11, buf, TXT_PLAIN);
+    }
+
+    // items and perks windows
+    p = put_str(buf, "ITEMS ");
+    p = put_num(p, game.nitems);
+    p = put_str(p, "/");
+    put_num(p, MAX_ITEMS);
+    text_style(TOP, 1, 13, game.nitems >= MAX_ITEMS ? "ITEMS FULL" : buf, TXT_LCD);
+    for (int i = 0; i < game.nitems; i++) {
+        const ItemInfo *it = &item_info[game.items[i]];
+        text_style(TOP, 4, 14 + i * 2, it->name, game.item_flash[i] ? TXT_GOLD : TXT_PLAIN);
+        text_style(TOP, 4, 15 + i * 2, trigger_short[it->trigger], TXT_LCD);
+    }
+    text_style(TOP, 16, 13, "PERKS", TXT_LCD);
+    if (!game.nperks) text_style(TOP, 16, 15, "ONE EVERY", TXT_LCD);
+    if (!game.nperks) text_style(TOP, 16, 16, "5 ROUNDS", TXT_LCD);
+    for (int i = 0; i < game.nperks; i++) {
+        text_style(TOP, 19, 14 + i * 2, perk_info[game.perks[i]].name, game.perk_flash[i] ? TXT_GOLD : TXT_PLAIN);
+        text_style(TOP, 19, 15 + i * 2, perk_short[game.perks[i]], TXT_LCD);
+    }
+}
+
+static void hud_sprites(void)
+{
+    // Nubby's face reacts to what's happening
+    int f = face;
+    if (face_timer) face_timer--;
+    else f = FACE_HAPPY;
+    if (f == FACE_HAPPY && frames % 200 < 8) f = FACE_BLINK;
+    int bob = (frames / 12) % 4 == 3 ? 1 : 0;
+    spr(TOP, TOP_FACE, FACE_X, FACE_Y + bob, SpriteSize_64x64, TILE_FACE(f), PAL_UI, 1);
+
+    for (int h = 0; h < game.max_lives && h < 8; h++)
+        spr(TOP, TOP_HEART + h, 80 + h * 14, 4, SpriteSize_16x16, h < game.lives ? TILE_HEART : TILE_HEART_EMPTY,
+            PAL_UI, 1);
+    spr(TOP, TOP_COIN, 200, 4, SpriteSize_16x16, TILE_COIN, PAL_UI, 1);
+    for (int i = 0; i < game.nitems; i++)
+        spr(TOP, TOP_ITEM + i, 10, 112 + i * 16, SpriteSize_16x16, TILE_ICON(game.items[i]),
+            (game.item_flash[i] & 4) ? PAL_ICON_FLASH : PAL_ICON, 1);
+    for (int i = 0; i < game.nperks; i++)
+        spr(TOP, TOP_PERK + i, 130, 112 + i * 16, SpriteSize_16x16, TILE_PERK(game.perks[i]),
+            (game.perk_flash[i] & 4) ? PAL_ICON_FLASH : PAL_ICON, 1);
+    if (detail_kind != DETAIL_NONE)
+        spr(TOP, TOP_DETAIL, 16, 36, SpriteSize_32x32,
+            detail_kind == DETAIL_ITEM ? TILE_BIGICON(detail_id) : TILE_BIGPERK(detail_id), PAL_ICON, 0);
+}
+
+// ---------------------------------------------------------------- the bottom screen
+
+static void board_sprites(void)
+{
+    if (state == ST_SHOP || state == ST_SWAP || state == ST_PERK || state == ST_INVENTORY) return;   // menus cover it
     int blink = (frames % 180) < 8;
-    int nx = state == ST_AIM ? LAUNCH_X : game.x >> 8;
-    int ny = state == ST_AIM ? LAUNCH_Y : game.y >> 8;
-    if ((state == ST_AIM || game.flying) && game_has(&game, ITEM_BIG))
-        set_obj(OBJ_NUBBY, nx - 8, ny - 8, ATTR1_SIZE16,
-                (blink ? TILE_NUBBY_BIG_BLINK : TILE_NUBBY_BIG) | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
-    else if (state == ST_AIM || game.flying)
-        set_obj(OBJ_NUBBY, nx - 4, ny - 4, ATTR1_SIZE8,
-                (blink ? TILE_NUBBY_BLINK : TILE_NUBBY) | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
+    int flying = state == ST_FLY || (state == ST_PAUSE && paused_from == ST_FLY);
+    int aiming = state == ST_AIM || state == ST_BOSS || (state == ST_PAUSE && paused_from == ST_AIM);
+    int nx = flying ? game.x >> 8 : LAUNCH_X;
+    int ny = flying ? game.y >> 8 : LAUNCH_Y;
+    if (flying || aiming) {
+        int big = game_has(&game, ITEM_BIG);
+        int t = big ? (blink ? TILE_NUBBY_BIG_BLINK : TILE_NUBBY_BIG) : (blink ? TILE_NUBBY_BLINK : TILE_NUBBY);
+        spr(BOT, OBJ_NUBBY, nx - 8, ny - 8, SpriteSize_16x16, t, PAL_NUBBY, 1);
+    }
+    if (state == ST_AIM || state == ST_FLY)
+        spr(BOT, OBJ_PAUSE, 236, 1, SpriteSize_16x16, TILE_PAUSE, PAL_ICON, 1);
 
     if (state == ST_AIM) {
         int16_t xs[AIM_DOTS], ys[AIM_DOTS];
         int n = game_predict(&game, aim, xs, ys, AIM_DOTS);
         for (int d = 0; d < n; d++)
-            set_obj(OBJ_DOT + d, xs[d] - 4, ys[d] - 4, ATTR1_SIZE8,
-                    TILE_DOT | ATTR2_PRIO(1) | ATTR2_PAL(PAL_NUBBY));
+            spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NUBBY, 1);
     }
-
-    // boss hazards: the laser locks onto a row, blinks a warning, then fires
-    if (game.boss == BOSS_LASER && game.laser_row >= 0 && state == ST_FLY) {
-        int warn = game.laser_timer < LASER_WARN;
-        if (!warn || (frames & 4))
-            for (int k = 0; k < 20; k++)
-                set_obj(OBJ_FX + k, BOARD_L + k * 8, game_row_y(game.laser_row) - 4, 0,
-                        (warn ? TILE_LASER_WARN : TILE_LASER) | ATTR2_PRIO(warn ? 1 : 0) | ATTR2_PAL(PAL_FX));
-    }
-    // wind streaks drift the way the wind blows
-    if (game.boss == BOSS_WIND && (state == ST_AIM || state == ST_FLY || state == ST_BOSS)) {
-        for (int k = 0; k < 10; k++) {
-            int x = (k * 53 + frames * 3 * game.wind) % 160;
-            if (x < 0) x += 160;
-            set_obj(OBJ_FX + k, BOARD_L + x - 4, 24 + k * 13, 0, TILE_WIND | ATTR2_PRIO(2) | ATTR2_PAL(PAL_FX));
-        }
-    }
-
-    // items stacked on the right, perks on the left; both flash when they fire
-    for (int i = 0; i < game.nitems; i++)
-        icon_obj(OBJ_ICON + i, game.items[i], 214, 41 + i * 15, 1, game.item_flash[i] & 4);
-    for (int p = 0; p < game.nperks; p++)
-        perk_obj(OBJ_PERK + p, game.perks[p], 2 + (p % 2) * 18, 112 + (p / 2) * 18, 1, game.perk_flash[p] & 4);
 
     for (int i = 0; i < NUM_SLOTS; i++) {
         int32_t v = game.pegs[i];
@@ -249,91 +466,60 @@ static void draw_objects(void)
             shown[i] = v;
         }
         int pal = game.flash[i] ? PAL_FLASH : game.armor[i] ? PAL_ARMOR : PAL_TIER(tier(v));
-        set_obj(OBJ_PEG + i, slots[i].x - 8, slots[i].y - 8, ATTR1_SIZE16,
-                PEG_TILE(i) | ATTR2_PRIO(1) | ATTR2_PAL(pal));
+        spr(BOT, OBJ_PEG + i, slots[i].x - 16, slots[i].y - 16, SpriteSize_32x32, PEG_TILE(i), pal, 1);
+    }
+
+    for (int k = 0; k < NUM_SPARKS; k++) {
+        Spark *s = &sparks[k];
+        if (!s->life) continue;
+        s->life--;
+        s->x += s->vx;
+        s->y += s->vy;
+        s->vy += 40;
+        spr(BOT, OBJ_SPARK + k, (s->x >> 8) - 4, (s->y >> 8) - 4, SpriteSize_8x8, TILE_SPARK, s->pal, 1);
+    }
+    for (int k = 0; k < NUM_POPUPS; k++) {
+        Popup *p = &popups[k];
+        if (!p->life) continue;
+        p->life--;
+        if (p->life > 12 || (frames & 1))
+            spr(BOT, OBJ_POPUP + k, p->x, p->y - (40 - p->life) / 2, SpriteSize_32x16, POPUP_TILE(k), PAL_UI, 1);
+    }
+
+    // boss hazards: the laser locks onto a row, blinks a warning, then fires
+    if (game.boss == BOSS_LASER && game.laser_row >= 0 && state == ST_FLY) {
+        int warn = game.laser_timer < LASER_WARN;
+        if (!warn || (frames & 4))
+            for (int k = 0; k < 8; k++)
+                spr(BOT, OBJ_FX + k, k * 32, game_row_y(game.laser_row) - 4, SpriteSize_32x8,
+                    warn ? TILE_LASER_WARN : TILE_LASER, PAL_FX, warn ? 1 : 0);
+    }
+    if (game.boss == BOSS_WIND && (state == ST_AIM || state == ST_FLY || state == ST_BOSS)) {
+        for (int k = 0; k < 10; k++) {
+            int x = (k * 67 + frames * 3 * game.wind) % 236;
+            if (x < 0) x += 236;
+            spr(BOT, OBJ_FX + k, BOARD_L + x - 8, 30 + k * 15, SpriteSize_16x8, TILE_WIND, PAL_FX, 2);
+        }
     }
 }
+
+static void ui_sprites(void);
 
 static void frame(void)
 {
-    draw_objects();
-    vsync();
-    for (int i = 0; i < 128 * 4; i++) OAM[i] = oam[i];
+    spr_hide_all();
+    if (on_board()) {
+        hud_sprites();
+        board_sprites();
+        ui_sprites();
+    }
+    if (shake_timer) {
+        shake_timer--;
+        shake(shake_timer ? (int)(game_rand(&game) % 5) - 2 : 0, shake_timer ? (int)(game_rand(&game) % 3) - 1 : 0);
+    }
+    gfx_frame();
     sound_update();
     frames++;
-}
-
-static void fade(int to_black)
-{
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0 | BLD_BG1 | BLD_OBJ | BLD_BD;
-    for (int i = 0; i <= 16; i += 2) {
-        REG_BLDY = to_black ? i : 16 - i;
-        frame();
-    }
-    if (!to_black) REG_BLDCNT = 0;
-}
-
-// ---------------------------------------------------------------- text helpers
-
-static void num_right(int x, int y, int v, int width)
-{
-    char buf[12];
-    int max = 1;
-    for (int i = 0; i < width; i++) max *= 10;
-    if (v >= max) v = max - 1;
-    format_num(buf, v, width);
-    for (int i = 0; i < width - 1 && buf[i] == '0'; i++) buf[i] = ' ';
-    text_at(x, y, buf);
-}
-
-// Append a number to a string without leading zeros; returns the new end.
-static char *put_num(char *p, int v)
-{
-    char tmp[12];
-    int n = 0;
-    do {
-        tmp[n++] = '0' + v % 10;
-        v /= 10;
-    } while (v && n < 11);
-    while (n) *p++ = tmp[--n];
-    *p = 0;
-    return p;
-}
-
-static char *put_str(char *p, const char *s)
-{
-    while (*s) *p++ = *s++;
-    *p = 0;
-    return p;
-}
-
-static void draw_hud(void)
-{
-    if (game.boss) text_style(0, 1, "BOSS!", TXT_GOLD);
-    else text_at(0, 1, "ROUND");
-    num_right(0, 2, game.round, 5);
-    text_at(0, 4, "GOAL");
-    num_right(0, 5, game.quota, 5);
-    text_at(0, 7, "SCORE");
-    num_right(0, 8, game.score, 5);
-    text_at(0, 10, "LIVES");
-    num_right(0, 11, game.lives, 5);
-
-    if (game.nperks) text_at(0, 13, "PERKS");
-
-    text_at(25, 1, "COINS");
-    num_right(25, 2, game.coins, 5);
-    text_at(25, 3, "ITEMS");
-    if (game.nitems >= MAX_ITEMS) {
-        text_style(25, 4, " FULL", TXT_GOLD);
-    } else {
-        char n[6] = { ' ', ' ', (char)('0' + game.nitems), '/', (char)('0' + MAX_ITEMS), 0 };
-        text_at(25, 4, n);
-    }
-    int until = SHOP_EVERY - (game.round - 1) % SHOP_EVERY;
-    text_at(25, 15, "SHOP");
-    text_at(25, 16, "IN");
-    num_right(27, 16, until, 3);
 }
 
 // ---------------------------------------------------------------- saving
@@ -352,81 +538,85 @@ static void record_run(void)
     if (changed) save_write();
 }
 
-// ---------------------------------------------------------------- title, menus, credits
+// ---------------------------------------------------------------- title, how to play, credits
 
-static const char *const main_items[MAIN_COUNT] = { "PLAY", "HOW TO PLAY", "CREDITS" };
-static const char *const pause_items[PAUSE_COUNT] = { "RESUME", "ITEMS AND PERKS", "QUIT" };
+static const Button title_buttons[] = {
+    { 7, 4, 18, 4, "PLAY" }, { 7, 9, 18, 3, "HOW TO PLAY" }, { 7, 13, 18, 3, "CREDITS" },
+};
+static const Button back_button[] = { { 9, 19, 14, 3, "BACK" } };
 
-static void draw_title_text(void)
+static void draw_title(void)
 {
-    text_clear();
+    char buf[40], *p;
+    text_clear(TOP);
+    text_clear(BOT);
+    draw_buttons(title_buttons, 3, menu_sel);
     if (save.best_round > 0) {
-        char buf[32], *p = put_str(buf, "BEST ROUND ");
+        panel(BOT, 2, 18, 28, 3);
+        p = put_str(buf, "BEST ROUND ");
         p = put_num(p, save.best_round);
         p = put_str(p, "  LAUNCH ");
         put_num(p, save.best_score);
-        panel(17, 28, 3);                   // a solid strip so it reads over the sky
-        text_center(18, buf, TXT_HILITE);
+        text_center(BOT, 19, buf, TXT_HILITE);
+    } else if (!save_available) {
+        text_center(BOT, 19, "NO SD CARD: SCORES WON'T SAVE", TXT_PLAIN);
     }
-}
-
-static void draw_main_menu(void) { menu_draw(9, 16, 0, main_items, MAIN_COUNT, menu_sel); }
-static void draw_pause_menu(void) { menu_draw(6, 20, "PAUSED", pause_items, PAUSE_COUNT, menu_sel); }
-
-static int menu_move(uint16_t pressed, int n)
-{
-    if (pressed & KEY_UP) {
-        menu_sel = (menu_sel + n - 1) % n;
-        sfx_move();
-        return 1;
-    }
-    if (pressed & KEY_DOWN) {
-        menu_sel = (menu_sel + 1) % n;
-        sfx_move();
-        return 1;
-    }
-    return 0;
 }
 
 static void go_title(void)
 {
     fade(1);
     music_stop();
-    REG_BG1VOFS = 0;
-    load_bg(title_pal, title_tiles);
-    draw_title_text();
+    dim(TOP, 0);
+    dim(BOT, 0);
+    shake(0, 0);
+    text_scroll(TOP, 0);
+    gfx_picture(TOP, title_top_bin);
+    gfx_picture(BOT, title_bottom_bin);
     state = ST_TITLE;
+    menu_sel = 0;
+    draw_title();
+    frame();
     fade(0);
     music_play(SONG_FACTORY);
 }
 
-static void back_to_menu(int sel)
+static void back_to_title(int sel)
 {
-    REG_BG1VOFS = 0;
-    dim(0, 0);
-    state = ST_MENU;
+    text_scroll(TOP, 0);
+    dim(TOP, 0);
+    state = ST_TITLE;
     menu_sel = sel;
-    draw_title_text();
-    draw_main_menu();
+    draw_title();
 }
 
 static void show_howto(void)
 {
+    static const char *const lines[] = {
+        "TOUCH THE BOARD AND DRAG TO",
+        "AIM, THEN LET GO TO LAUNCH.",
+        "LEFT, RIGHT AND A WORK TOO.",
+        "",
+        "A HIT SCORES THE PEG'S NUMBER",
+        "AND HALVES IT. A 1 VANISHES.",
+        "",
+        "REACH THE GOAL IN ONE LAUNCH",
+        "OR LOSE A LIFE. BEAT IT BY",
+        "MORE TO RESTOCK THE BOARD.",
+        "",
+        "BUY ITEMS, PICK PERKS AND",
+        "BEAT A BOSS EVERY 5 ROUNDS!",
+    };
     state = ST_HOWTO;
-    text_clear();
-    dim(1, 12);
-    panel(1, 28, 18);
-    text_center(2, "HOW TO PLAY", TXT_HILITE);
-    text_style(2, 4, "AIM WITH LEFT AND RIGHT,", TXT_PANEL);
-    text_style(2, 5, "A LAUNCHES NUBBY.", TXT_PANEL);
-    text_style(2, 7, "A HIT SCORES THE PEG'S", TXT_PANEL);
-    text_style(2, 8, "NUMBER AND HALVES IT.", TXT_PANEL);
-    text_style(2, 9, "A 1 POPS AND VANISHES.", TXT_PANEL);
-    text_style(2, 11, "REACH THE GOAL IN ONE", TXT_HILITE);
-    text_style(2, 12, "LAUNCH OR LOSE A LIFE.", TXT_HILITE);
-    text_style(2, 14, "BEAT IT BY MORE TO RESTOCK", TXT_PANEL);
-    text_style(2, 15, "AND GROW THE PEGS.", TXT_PANEL);
-    text_style(2, 16, "BOUNCE OFF THE WALLS!", TXT_PANEL);
+    text_clear(TOP);
+    text_clear(BOT);
+    dim(TOP, 10);
+    panel(TOP, 0, 1, 32, 20);
+    text_center(TOP, 2, "HOW TO PLAY", TXT_HILITE);
+    for (unsigned i = 0; i < sizeof(lines) / sizeof(lines[0]); i++)
+        text_style(TOP, 2, 4 + i, lines[i], i >= 7 && i <= 9 ? TXT_HILITE : TXT_PANEL);
+    menu_sel = 0;
+    draw_buttons(back_button, 1, 0);
 }
 
 static const struct { const char *role, *name; } credits[] = {
@@ -435,69 +625,73 @@ static const struct { const char *role, *name; } credits[] = {
     { "LEAD GAME DESIGNER", "CLAUDE" }, { "SYSTEMS DESIGNER", "CLAUDE" },
     { "PHYSICS PROGRAMMER", "CLAUDE" }, { "GAMEPLAY PROGRAMMER", "CLAUDE" },
     { "ENGINE PROGRAMMER", "CLAUDE" }, { "GRAPHICS PROGRAMMER", "CLAUDE" },
-    { "AUDIO PROGRAMMER", "CLAUDE" }, { "TOOLS PROGRAMMER", "CLAUDE" },
-    { "UI PROGRAMMER", "CLAUDE" }, { "BUILD ENGINEER", "CLAUDE" },
-    { "ART DIRECTOR", "CLAUDE" }, { "PIXEL ARTIST", "CLAUDE" },
-    { "CHARACTER ARTIST", "CLAUDE" }, { "UI ARTIST", "CLAUDE" },
-    { "COMPOSER", "CLAUDE" }, { "SOUND DESIGNER", "CLAUDE" },
-    { "QA LEAD", "CLAUDE" }, { "QA TESTER", "HEATH" },
-    { "BALANCE TESTER", "HEATH" }, { "ECONOMY DESIGNER", "CLAUDE" },
-    { "PEG ENGINEER", "CLAUDE" }, { "NUBBY WRANGLER", "CLAUDE" },
+    { "TOUCH CONTROLS", "CLAUDE" }, { "AUDIO PROGRAMMER", "CLAUDE" },
+    { "TOOLS PROGRAMMER", "CLAUDE" }, { "UI PROGRAMMER", "CLAUDE" },
+    { "BUILD ENGINEER", "CLAUDE" }, { "ART DIRECTOR", "CLAUDE" },
+    { "PIXEL ARTIST", "CLAUDE" }, { "CHARACTER ARTIST", "CLAUDE" },
+    { "UI ARTIST", "CLAUDE" }, { "COMPOSER", "CLAUDE" },
+    { "SOUND DESIGNER", "CLAUDE" }, { "QA LEAD", "CLAUDE" },
+    { "QA TESTER", "HEATH" }, { "BALANCE TESTER", "HEATH" },
+    { "ECONOMY DESIGNER", "CLAUDE" }, { "PEG ENGINEER", "CLAUDE" },
+    { "NUBBY WRANGLER", "CLAUDE" },
 };
 #define NUM_ROLES ((int)(sizeof(credits) / sizeof(credits[0])))
-#define CREDITS_LEAD 20           // blank rows so the list starts below the screen
-#define CREDITS_HEAD 4            // "NUBBY GBA", blank, "CREDITS", blank
+#define CREDITS_LEAD 24           // blank rows so the list starts below the screen
+#define CREDITS_HEAD 4            // "NUBBY DS", blank, "CREDITS", blank
 #define CREDITS_TAIL (CREDITS_LEAD + CREDITS_HEAD + NUM_ROLES * 3 + 1)
 #define CREDITS_END (CREDITS_TAIL + 5)
 
 // Write virtual credits row r into the (32-row, wrapping) text map.
 static void credits_write_row(int r)
 {
-    text_clear_row(r);
+    text_clear_rows(TOP, r & 31, (r & 31) + 1);
     int i = r - CREDITS_LEAD;
-    if (i == 0) text_center(r, "NUBBY GBA", TXT_GOLD);
-    if (i == 2) text_center(r, "CREDITS", TXT_PLAIN);
+    if (i == 0) text_center(TOP, r, "NUBBY DS", TXT_GOLD);
+    if (i == 2) text_center(TOP, r, "CREDITS", TXT_PLAIN);
     i -= CREDITS_HEAD;
     if (i < 0) return;
     int role = i / 3;
     if (role < NUM_ROLES) {
-        if (i % 3 == 0) text_center(r, credits[role].role, TXT_PLAIN);
-        if (i % 3 == 1) text_center(r, credits[role].name, TXT_GOLD);
+        if (i % 3 == 0) text_center(TOP, r, credits[role].role, TXT_PLAIN);
+        if (i % 3 == 1) text_center(TOP, r, credits[role].name, TXT_GOLD);
     } else if (r == CREDITS_TAIL) {
-        text_center(r, "INSPIRED BY", TXT_PLAIN);
+        text_center(TOP, r, "INSPIRED BY", TXT_PLAIN);
     } else if (r == CREDITS_TAIL + 1) {
-        text_center(r, "NUBBY'S NUMBER FACTORY", TXT_GOLD);
+        text_center(TOP, r, "NUBBY'S NUMBER FACTORY", TXT_GOLD);
     } else if (r == CREDITS_END) {
-        text_center(r, "THANKS FOR PLAYING!", TXT_GOLD);
+        text_center(TOP, r, "THANKS FOR PLAYING!", TXT_GOLD);
     }
 }
 
 static void start_credits(void)
 {
     state = ST_CREDITS;
-    text_clear();
-    dim(1, 12);
+    text_clear(TOP);
+    text_clear(BOT);
+    dim(TOP, 11);
     credits_scroll = 0;
-    for (credits_rows = 0; credits_rows < 21; credits_rows++) credits_write_row(credits_rows);
+    for (credits_rows = 0; credits_rows < 25; credits_rows++) credits_write_row(credits_rows);
+    menu_sel = 0;
+    draw_buttons(back_button, 1, 0);
 }
 
-static void update_credits(uint16_t pressed)
+static void update_credits(void)
 {
-    if (pressed & (KEY_A | KEY_B | KEY_START)) {
-        back_to_menu(MAIN_CREDITS);
+    int sel = 0;
+    if (buttons_update(back_button, 1, &sel) == 0 || (pressed & (KEY_B | KEY_START))) {
+        back_to_title(2);
         return;
     }
     // scroll until the last line sits in the middle of the screen, then hold
     int top = credits_scroll >> 3;
-    if ((frames & 1) && top < CREDITS_END - 9) credits_scroll++;
+    if ((frames & 1) && top < CREDITS_END - 11) credits_scroll++;
     top = credits_scroll >> 3;
-    while (credits_rows <= top + 20) credits_write_row(credits_rows++);
-    REG_BG1VOFS = credits_scroll & 255;
+    while (credits_rows <= top + 24) credits_write_row(credits_rows++);
+    text_scroll(TOP, credits_scroll & 255);
 }
 
 // ---------------------------------------------------------------- the run
 
-// Fade to this round's board (the pegs carry over from the last round).
 // A new song every milestone, and the boss theme on boss rounds.
 static int song_for_round(int round)
 {
@@ -509,42 +703,40 @@ static int song_for_round(int round)
 static void draw_boss_intro(void)
 {
     const BossInfo *b = &boss_info[game.boss];
-    char buf[32], *p;
-    panel(4, 24, 12);
-    text_center(5, "BOSS ROUND!", TXT_HILITE);
-    text_center(7, b->name, TXT_HILITE);
-    text_center(9, b->line1, TXT_PANEL);
-    text_center(10, b->line2, TXT_PANEL);
+    char buf[40], *p;
+    panel(BOT, 3, 5, 26, 13);
+    text_center(BOT, 6, "BOSS ROUND!", TXT_HILITE);
+    text_center(BOT, 8, b->name, TXT_HILITE);
+    text_center(BOT, 10, b->line1, TXT_PANEL);
+    text_center(BOT, 11, b->line2, TXT_PANEL);
     p = put_str(buf, "WIN FOR +");
     p = put_num(p, BOSS_BONUS);
     put_str(p, " COINS");
-    text_center(12, buf, TXT_PANEL);
-    text_center(14, "PRESS A", TXT_PANEL);
+    text_center(BOT, 13, buf, TXT_PANEL);
+    text_center(BOT, 15, "TOUCH TO START", TXT_HILITE);
 }
 
-static void update_boss_intro(uint16_t pressed)
-{
-    if (!(pressed & (KEY_A | KEY_START))) return;
-    dim(0, 0);
-    text_clear();
-    draw_hud();
-    state = ST_AIM;
-}
-
+// Fade to this round's board (the pegs carry over from the last round).
 static void show_board(void)
 {
     fade(1);
     music_stop();
-    int board = (game.round - 1) % NUM_BOARDS;
-    load_bg(board_pal[board], board_tiles[board]);
-    dim(0, 0);
-    text_clear();
-    draw_hud();
+    gfx_picture(TOP, dashboard_bin);
+    gfx_picture(BOT, boards[(game.round - 1) % NUM_BOARDS]);
+    dim(TOP, 0);
+    dim(BOT, 0);
+    text_clear(BOT);
+    show_detail(DETAIL_NONE, 0, "");
+    clear_effects();
+    sync_board();
     state = ST_AIM;
+    aiming_by_touch = 0;
+    hud_text();
+    frame();
     fade(0);
     if (game.boss) {                        // explain the hazard before the first launch
         state = ST_BOSS;
-        dim(1, PAUSE_DIM);
+        dim(BOT, PAUSE_DIM);
         draw_boss_intro();
     }
     music_play(song_for_round(game.round));
@@ -555,103 +747,104 @@ static void new_run(void)
     game_new_run(&game, seed ^ (uint32_t)frames * 2654435761u);
     best_launch = 0;
     aim = 0;
+    set_face(FACE_HAPPY, 0);
+    for (int i = 0; i < NUM_SLOTS; i++) shown[i] = -1;
     show_board();
 }
 
 static void game_over(void)
 {
-    char buf[32], *p;
+    char buf[40], *p;
+    int record = game.round > save.best_round && save.best_round > 0;
     state = ST_OVER;
     sfx_over();
     record_run();
-    text_clear();
-    draw_hud();
-    panel(5, 18, 9);
-    text_center(6, "GAME OVER", TXT_HILITE);
+    set_face(FACE_WORRY, 1 << 30);
+    text_clear(BOT);
+    dim(BOT, PAUSE_DIM);
+    panel(BOT, 4, 5, 24, 12);
+    text_center(BOT, 6, "GAME OVER", TXT_HILITE);
     p = put_str(buf, "REACHED ROUND ");
     put_num(p, game.round);
-    text_center(8, buf, TXT_PANEL);
+    text_center(BOT, 8, buf, TXT_PANEL);
     p = put_str(buf, "BEST LAUNCH ");
     put_num(p, best_launch);
-    text_center(9, buf, TXT_PANEL);
-    text_center(11, "PRESS START", TXT_PANEL);
+    text_center(BOT, 10, buf, TXT_PANEL);
+    if (record) text_center(BOT, 12, "NEW RECORD!", TXT_HILITE);
+    text_center(BOT, 14, "TOUCH TO CONTINUE", TXT_PANEL);
+    hud_text();
 }
 
-// Called when Nubby falls out: score the launch and show how it went.
 static void finish_launch(void)
 {
-    char buf[32], *p;
+    char buf[40], *p;
     int score = game.score;
     int quota = game.quota;
     int boss = game.boss;
     last_result = game_resolve(&game);
     score = game.perfect ? score * 2 : score;
     if (score > best_launch) best_launch = score;
+    sync_board();
 
     if (last_result == RESULT_GAME_OVER) {
         game_over();
         return;
     }
-    text_clear();
-    draw_hud();
-    panel(5, 20, 9);
+    text_clear(BOT);
+    dim(BOT, PAUSE_DIM);
+    panel(BOT, 5, 6, 22, 10);
     p = put_num(buf, score);
     p = put_str(p, " OF ");
     put_num(p, quota);
-    text_center(8, buf, TXT_PANEL);
+    text_center(BOT, 9, buf, TXT_PANEL);
     if (last_result == RESULT_CLEARED) {
         sfx_clear();
-        text_center(6, game.perfect ? "PERFECT! X2" : boss ? "BOSS BEATEN!" : "QUOTA MET!", TXT_HILITE);
+        set_face(FACE_WOW, RESULT_FRAMES);
+        text_center(BOT, 7, game.perfect ? "PERFECT! X2" : boss ? "BOSS BEATEN!" : "QUOTA MET!", TXT_HILITE);
         p = put_num(buf, game.restocks);
         put_str(p, game.restocks == 1 ? " RESTOCK" : " RESTOCKS");
-        text_center(10, buf, TXT_PANEL);
+        text_center(BOT, 11, buf, TXT_PANEL);
         int coins = game.restocks + (boss ? BOSS_BONUS : 0);
         p = put_str(buf, "+");
         p = put_num(p, coins);
         put_str(p, coins == 1 ? " COIN" : " COINS");
-        text_center(12, buf, TXT_HILITE);
+        text_center(BOT, 13, buf, TXT_HILITE);
     } else {
         sfx_deny();
-        text_center(6, "MISSED!", TXT_HILITE);
+        set_face(FACE_WORRY, RESULT_FRAMES);
+        text_center(BOT, 7, "MISSED!", TXT_HILITE);
         p = put_num(buf, game.lives);
         put_str(p, game.lives == 1 ? " LIFE LEFT" : " LIVES LEFT");
-        text_center(10, buf, TXT_PANEL);
-        text_center(12, "THE BOARD RESETS", TXT_PANEL);
+        text_center(BOT, 11, buf, TXT_PANEL);
+        text_center(BOT, 13, "THE BOARD RESETS", TXT_PANEL);
     }
+    hud_text();
     state = ST_RESULT;
     timer = RESULT_FRAMES;
 }
 
 // ---------------------------------------------------------------- shop
 
-// Hands full: pick which owned item the new one replaces.
-static void draw_swap(void)
+static const Button next_button[] = { { 7, 19, 18, 3, "NEXT ROUND" } };
+
+static void shop_detail(void)
 {
-    char buf[32];
-    panel(1, 28, 18);
-    text_center(2, "YOUR ITEMS ARE FULL", TXT_HILITE);
-    put_str(put_str(buf, "SWAP ONE FOR "), item_info[game.shop[swap_for]].name);
-    text_center(3, buf, TXT_PANEL);
-    for (int i = 0; i < game.nitems; i++) {
-        int on = i == menu_sel, row = 5 + i * 2;
-        text_style(2, row, on ? ">" : " ", on ? TXT_HILITE : TXT_PANEL);
-        text_style(6, row, item_info[game.items[i]].name, on ? TXT_HILITE : TXT_PANEL);
-        char *q = put_str(buf, "+");
-        q = put_num(q, game_refund(game.items[i]));
-        put_str(q, " BACK");
-        text_style(19, row, buf, on ? TXT_HILITE : TXT_PANEL);
+    int item = shop_sel < SHOP_SLOTS ? game.shop[shop_sel] : -1;
+    if (item < 0) {
+        show_detail(DETAIL_NONE, 0, "");
+        return;
     }
-    const ItemInfo *it = &item_info[game.items[menu_sel]];
-    text_center(15, trigger_text[it->trigger], TXT_PANEL);
-    text_center(16, it->effect, TXT_PANEL);
-    text_center(17, "A SWAP   B KEEP THEM", TXT_PANEL);
+    const char *hint = game.coins < item_info[item].price ? "NOT ENOUGH COINS"
+                       : game.nitems >= MAX_ITEMS         ? "TAP AGAIN TO SWAP IT IN"
+                                                          : "TAP AGAIN TO BUY";
+    show_detail(DETAIL_ITEM, item, hint);
 }
 
 static void draw_shop(void)
 {
-    char buf[32], *p;
-    panel(1, 28, 18);
-    text_center(2, "SHOP", TXT_HILITE);
+    char buf[40], *p;
+    text_clear(BOT);
+    text_center(BOT, 1, "SHOP", TXT_GOLD);
     p = put_str(buf, "COINS ");
     p = put_num(p, game.coins);
     if (game.nitems >= MAX_ITEMS) {
@@ -662,34 +855,24 @@ static void draw_shop(void)
         p = put_str(p, "/");
         put_num(p, MAX_ITEMS);
     }
-    text_center(3, buf, TXT_HILITE);
-    for (int s = 0; s <= SHOP_SLOTS; s++) {
-        int row = 5 + s * 3;
-        int on = s == menu_sel;
-        int style = on ? TXT_HILITE : TXT_PANEL;
-        text_style(2, row, on ? ">" : " ", style);
-        if (s == SHOP_SLOTS) {
-            text_style(6, row, "NEXT ROUND", style);
-            continue;
-        }
-        int item = game.shop[s];
-        text_style(6, row, "                      ", TXT_PANEL);
+    text_center(BOT, 2, buf, TXT_GOLD);
+    for (int s = 0; s < SHOP_SLOTS; s++) {
+        int row = 4 + s * 5, item = game.shop[s], on = s == shop_sel;
+        panel(BOT, 1, row, 30, 5);
         if (item < 0) {
-            text_style(6, row, "SOLD", TXT_PANEL);
+            text_style(BOT, 7, row + 2, "SOLD", TXT_DIM);
             continue;
         }
-        text_style(6, row, item_info[item].name, style);
+        text_style(BOT, 7, row + 1, item_info[item].name, on ? TXT_HILITE : TXT_PANEL);
         p = put_num(buf, item_info[item].price);
         put_str(p, " COINS");
-        text_style(18, row, buf, game.coins >= item_info[item].price ? TXT_PANEL : TXT_DIM);
+        text_style(BOT, 21, row + 1, buf, game.coins >= item_info[item].price ? TXT_PANEL : TXT_DIM);
+        text_style(BOT, 7, row + 3, trigger_short[item_info[item].trigger], TXT_DIM);
+        if (on) text_style(BOT, 2, row + 2, ">", TXT_HILITE);
     }
-    text_style(2, 16, "                        ", TXT_PANEL);
-    text_style(2, 17, "                        ", TXT_PANEL);
-    if (menu_sel < SHOP_SLOTS && game.shop[menu_sel] >= 0) {
-        const ItemInfo *it = &item_info[game.shop[menu_sel]];
-        text_center(16, trigger_text[it->trigger], TXT_PANEL);
-        text_center(17, it->effect, TXT_HILITE);
-    }
+    draw_buttons(next_button, 1, shop_sel == SHOP_SLOTS ? 0 : -1);
+    shop_detail();
+    hud_text();
 }
 
 static void open_shop(void)
@@ -697,100 +880,130 @@ static void open_shop(void)
     fade(1);
     game_roll_shop(&game);
     state = ST_SHOP;
-    menu_sel = 0;
-    text_clear();
+    shop_sel = 0;
+    while (shop_sel < SHOP_SLOTS && game.shop[shop_sel] < 0) shop_sel++;
+    swap_for = -1;
+    dim_picture(BOT, SHOP_DIM);
     draw_shop();
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0;    // the shop sits over a darkened board
-    REG_BLDY = 12;
+    frame();
+    fade(0);
     music_play(SONG_SHOP);
 }
 
-static void update_shop(uint16_t pressed)
+static void draw_swap(void)
 {
-    if (swap_for >= 0) {
-        if (menu_move(pressed, game.nitems)) draw_swap();
-        if (pressed & (KEY_A | KEY_B)) {
-            if (pressed & KEY_A) {
-                game_buy_swap(&game, swap_for, menu_sel);
-                sfx_buy();
+    char buf[40], *p;
+    text_clear(BOT);
+    text_center(BOT, 0, "YOUR ITEMS ARE FULL", TXT_GOLD);
+    p = put_str(buf, "SWAP ONE FOR ");
+    put_str(p, item_info[game.shop[swap_for]].name);
+    text_center(BOT, 1, buf, TXT_GOLD);
+    for (int i = 0; i < game.nitems; i++) {
+        int row = 3 + i * 3, on = i == menu_sel;
+        panel(BOT, 1, row, 30, 3);
+        text_style(BOT, 5, row + 1, item_info[game.items[i]].name, on ? TXT_HILITE : TXT_PANEL);
+        p = put_str(buf, "+");
+        p = put_num(p, game_refund(game.items[i]));
+        put_str(p, " COINS BACK");
+        text_style(BOT, 16, row + 1, buf, on ? TXT_HILITE : TXT_PANEL);
+    }
+    draw_buttons(back_button, 1, -1);
+    show_detail(DETAIL_ITEM, game.items[menu_sel], "TAP AGAIN TO SWAP THIS OUT");
+    hud_text();
+}
+
+static void leave_swap(int bought)
+{
+    shop_sel = swap_for;
+    swap_for = -1;
+    state = ST_SHOP;
+    if (bought) {
+        sfx_buy();
+        set_face(FACE_WOW, 40);
+        shop_sel = SHOP_SLOTS;
+    }
+    draw_shop();
+}
+
+static void update_swap(void)
+{
+    int choose = -1, n = game.nitems;
+    for (int i = 0; i < n; i++)
+        if (tapped_in(8, (3 + i * 3) * 8, 240, 24)) {
+            if (menu_sel == i) {
+                choose = i;
+            } else {
+                menu_sel = i;
+                sfx_move();
+                draw_swap();
             }
-            menu_sel = swap_for;
-            swap_for = -1;
-            draw_shop();
         }
+    if (pressed & (KEY_UP | KEY_DOWN)) {
+        menu_sel = (menu_sel + ((pressed & KEY_UP) ? n - 1 : 1)) % n;
+        sfx_move();
+        draw_swap();
+    }
+    if (pressed & KEY_A) choose = menu_sel;
+    if (choose >= 0) {
+        game_buy_swap(&game, swap_for, choose);
+        leave_swap(1);
         return;
     }
-    if (menu_move(pressed, SHOP_SLOTS + 1)) draw_shop();
-    if (!(pressed & KEY_A)) return;
-    if (menu_sel == SHOP_SLOTS) {
-        show_board();
-        return;
-    }
-    int item = game.shop[menu_sel];
-    if (item >= 0 && game.nitems >= MAX_ITEMS && game.coins >= item_info[item].price) {
-        swap_for = menu_sel;                  // hands full: choose what to let go of
+    int sel = 0;
+    if (buttons_update(back_button, 1, &sel) == 0 || (pressed & KEY_B)) leave_swap(0);
+}
+
+static void try_buy(void)
+{
+    int item = game.shop[shop_sel];
+    if (item < 0) return;
+    if (game.nitems >= MAX_ITEMS && game.coins >= item_info[item].price) {
+        swap_for = shop_sel;                   // hands full: choose what to let go of
         menu_sel = 0;
+        state = ST_SWAP;
         sfx_move();
         draw_swap();
         return;
     }
-    if (game_buy(&game, menu_sel)) sfx_buy();
-    else sfx_deny();
+    if (game_buy(&game, shop_sel)) {
+        sfx_buy();
+        set_face(FACE_WOW, 40);
+    } else {
+        sfx_deny();
+    }
     draw_shop();
 }
 
-// ---------------------------------------------------------------- play
-
-static void pause_game(void)
+static void update_shop(void)
 {
-    paused_from = state;
-    state = ST_PAUSE;
-    menu_sel = PAUSE_RESUME;
-    music_stop();
-    dim(1, PAUSE_DIM);
-    draw_pause_menu();
-}
-
-static void update_aim(uint16_t pressed)
-{
-    if (pressed & KEY_START) {
-        pause_game();
+    for (int s = 0; s < SHOP_SLOTS; s++)
+        if (tapped_in(8, (4 + s * 5) * 8, 240, 40) && game.shop[s] >= 0) {
+            if (shop_sel == s) {
+                try_buy();
+            } else {
+                shop_sel = s;
+                sfx_move();
+                draw_shop();
+            }
+            return;
+        }
+    if (tapped_in(next_button[0].x * 8, next_button[0].y * 8, next_button[0].w * 8, next_button[0].h * 8)) {
+        show_board();
         return;
     }
-    if (keys & KEY_LEFT) aim--;           // negative angles aim left
-    if (keys & KEY_RIGHT) aim++;
-    if (pressed & KEY_L) aim--;           // shoulders nudge one step for fine aim
-    if (pressed & KEY_R) aim++;
-    if (aim > AIM_MAX) aim = AIM_MAX;
-    if (aim < -AIM_MAX) aim = -AIM_MAX;
+    if (pressed & (KEY_UP | KEY_DOWN)) {
+        shop_sel = (shop_sel + ((pressed & KEY_UP) ? SHOP_SLOTS : 1)) % (SHOP_SLOTS + 1);
+        sfx_move();
+        draw_shop();
+    }
     if (pressed & KEY_A) {
-        game_launch(&game, aim);
-        sfx_launch();
-        state = ST_FLY;
+        if (shop_sel == SHOP_SLOTS) show_board();
+        else try_buy();
     }
 }
 
-static void update_fly(uint16_t pressed)
-{
-    if (pressed & KEY_START) {
-        pause_game();
-        return;
-    }
-    Events ev;
-    int out = game_step(&game, &ev);
-    if (ev.laser) sfx_laser();
-    else if (ev.armor) sfx_armor();
-    else if (ev.spring) sfx_spring();
-    else if (ev.pop) sfx_peg(ev.hits, ev.gone ? SFX_POP_GONE : SFX_POP);
-    else if (ev.item) sfx_item();
-    else if (ev.wall) sfx_wall();
-    draw_hud();
-    if (out) finish_launch();
-}
+// ---------------------------------------------------------------- perks
 
-static void open_shop(void);
-
-// After a cleared round: a perk choice, then the shop, then the next board.
 static void next_after_perk(void)
 {
     if (game_shop_due(&game)) open_shop();
@@ -799,17 +1012,20 @@ static void next_after_perk(void)
 
 static void draw_perks(void)
 {
-    panel(2, 28, 16);
-    text_center(3, "CHOOSE A PERK", TXT_HILITE);
+    text_clear(BOT);
+    text_center(BOT, 1, "CHOOSE A PERK", TXT_GOLD);
+    text_center(BOT, 2, "PERKS SET OFF YOUR ITEMS", TXT_GOLD);
     for (int c = 0; c < PERK_CHOICES; c++) {
         const PerkInfo *pk = &perk_info[game.perk_offer[c]];
-        int row = 6 + c * 5, on = c == menu_sel;
-        text_style(2, row, on ? ">" : " ", on ? TXT_HILITE : TXT_PANEL);
-        text_style(6, row, pk->name, on ? TXT_HILITE : TXT_PANEL);
-        text_style(6, row + 1, pk->line1, TXT_PANEL);
-        text_style(6, row + 2, pk->line2, TXT_PANEL);
+        int row = 4 + c * 8, on = c == menu_sel;
+        panel(BOT, 1, row, 30, 7);
+        text_style(BOT, 7, row + 1, pk->name, on ? TXT_HILITE : TXT_PANEL);
+        text_style(BOT, 7, row + 3, pk->line1, TXT_PANEL);
+        text_style(BOT, 7, row + 4, pk->line2, TXT_PANEL);
+        if (on) text_style(BOT, 2, row + 5, ">", TXT_HILITE);
     }
-    text_center(16, "PERKS TRIGGER YOUR ITEMS", TXT_PANEL);
+    show_detail(DETAIL_PERK, game.perk_offer[menu_sel], "TAP AGAIN TO TAKE IT");
+    hud_text();
 }
 
 static void open_perks(void)
@@ -818,150 +1034,283 @@ static void open_perks(void)
     game_roll_perks(&game);
     state = ST_PERK;
     menu_sel = 0;
-    text_clear();
+    dim_picture(BOT, SHOP_DIM);
     draw_perks();
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0;
-    REG_BLDY = 12;
+    frame();
+    fade(0);
     music_play(SONG_SHOP);
 }
 
-static void update_perks(uint16_t pressed)
+static void update_perks(void)
 {
-    if (menu_move(pressed, PERK_CHOICES)) draw_perks();
-    if (!(pressed & KEY_A)) return;
-    game_take_perk(&game, menu_sel);
+    int take = -1;
+    for (int c = 0; c < PERK_CHOICES; c++)
+        if (tapped_in(8, (4 + c * 8) * 8, 240, 56)) {
+            if (menu_sel == c) {
+                take = c;
+            } else {
+                menu_sel = c;
+                sfx_move();
+                draw_perks();
+            }
+        }
+    if (pressed & (KEY_UP | KEY_DOWN)) {
+        menu_sel ^= 1;
+        sfx_move();
+        draw_perks();
+    }
+    if (pressed & KEY_A) take = menu_sel;
+    if (take < 0) return;
+    game_take_perk(&game, take);
     sfx_buy();
+    set_face(FACE_WOW, 40);
     next_after_perk();
 }
 
-static void update_result(void)
+// ---------------------------------------------------------------- pause and the items and perks screen
+
+static const Button pause_buttons[] = {
+    { 6, 5, 20, 3, "RESUME" }, { 6, 9, 20, 3, "ITEMS AND PERKS" }, { 6, 13, 20, 3, "QUIT" },
+};
+
+static void draw_pause(void)
 {
-    if (--timer > 0) return;
-    if (last_result == RESULT_CLEARED) {
-        if (game_perk_due(&game)) open_perks();
-        else next_after_perk();
-    } else {
-        text_clear();
-        draw_hud();
-        state = ST_AIM;
-    }
+    dim(BOT, PAUSE_DIM);
+    text_clear(BOT);
+    text_center(BOT, 2, "PAUSED", TXT_GOLD);
+    draw_buttons(pause_buttons, 3, menu_sel);
 }
 
-// ---------------------------------------------------------------- items and perks (from pause)
+static void pause_game(void)
+{
+    paused_from = state;
+    state = ST_PAUSE;
+    menu_sel = 0;
+    music_stop();
+    draw_pause();
+}
+
+static void resume(void)
+{
+    dim(BOT, 0);
+    text_clear(BOT);
+    show_detail(DETAIL_NONE, 0, "");
+    hud_text();
+    state = paused_from;
+    aiming_by_touch = 0;
+    music_resume();
+}
+
+static void inventory_detail(void)
+{
+    if (inv_sel < game.nitems) show_detail(DETAIL_ITEM, game.items[inv_sel], "");
+    else if (inv_sel < game.nitems + game.nperks) show_detail(DETAIL_PERK, game.perks[inv_sel - game.nitems], "");
+    else show_detail(DETAIL_NONE, 0, "");
+    hud_text();
+}
 
 static void draw_inventory(void)
 {
-    char buf[32], *p;
-    text_clear();
-    panel(2, 28, 16);
-    text_center(3, "ITEMS AND PERKS", TXT_HILITE);
-    int n = game.nitems + game.nperks;
-    if (!n) {
-        text_center(8, "NOTHING YET!", TXT_PANEL);
-        text_center(10, "BUY ITEMS IN THE SHOP", TXT_PANEL);
-        text_center(11, "AND PICK A PERK EVERY", TXT_PANEL);
-        text_center(12, "5 ROUNDS", TXT_PANEL);
-    } else if (inv_sel < game.nitems) {
-        const ItemInfo *it = &item_info[game.items[inv_sel]];
-        p = put_str(buf, "ITEM ");
-        p = put_num(p, inv_sel + 1);
-        p = put_str(p, " OF ");
-        put_num(p, game.nitems);
-        text_center(4, buf, TXT_PANEL);
-        text_center(9, it->name, TXT_HILITE);
-        text_center(11, trigger_text[it->trigger], TXT_PANEL);
-        text_center(12, it->effect, TXT_PANEL);
-    } else {
-        const PerkInfo *pk = &perk_info[game.perks[inv_sel - game.nitems]];
-        p = put_str(buf, "PERK ");
-        p = put_num(p, inv_sel - game.nitems + 1);
-        p = put_str(p, " OF ");
-        put_num(p, game.nperks);
-        text_center(4, buf, TXT_PANEL);
-        text_center(9, pk->name, TXT_HILITE);
-        text_center(11, pk->line1, TXT_PANEL);
-        text_center(12, pk->line2, TXT_PANEL);
-    }
-    if (n > 1) text_center(15, "LEFT AND RIGHT TO BROWSE", TXT_PANEL);
-    text_center(16, "B TO GO BACK", TXT_PANEL);
+    text_clear(BOT);
+    dim_picture(BOT, SHOP_DIM);
+    text_center(BOT, 1, "ITEMS AND PERKS", TXT_GOLD);
+    text_center(BOT, 2, "TOUCH ONE TO READ ABOUT IT", TXT_GOLD);
+    panel(BOT, 1, 4, 30, 7);
+    text_style(BOT, 3, 4, "ITEMS", TXT_HILITE);
+    panel(BOT, 1, 11, 30, 7);
+    text_style(BOT, 3, 11, "PERKS", TXT_HILITE);
+    if (!game.nitems) text_center(BOT, 7, "BUY THEM IN THE SHOP", TXT_DIM);
+    if (!game.nperks) text_center(BOT, 14, "ONE EVERY 5 ROUNDS", TXT_DIM);
+    draw_buttons(back_button, 1, -1);
+    inventory_detail();
+}
+
+static void inventory_pos(int k, int *x, int *y)
+{
+    int row = k < game.nitems ? 0 : 1;
+    int col = row ? k - game.nitems : k;
+    *x = 26 + col * 44;
+    *y = row ? 108 : 52;
 }
 
 static void open_inventory(void)
 {
     state = ST_INVENTORY;
     inv_sel = 0;
-    REG_BLDCNT = BLD_DARKEN | BLD_BG0;      // icons stay bright over the darkened board
-    REG_BLDY = 12;
     draw_inventory();
 }
 
-static void update_inventory(uint16_t pressed)
+static void update_inventory(void)
 {
     int n = game.nitems + game.nperks;
+    for (int k = 0; k < n; k++) {
+        int x, y;
+        inventory_pos(k, &x, &y);
+        if (tapped_in(x - 4, y - 4, 40, 40)) {
+            inv_sel = k;
+            sfx_move();
+            inventory_detail();
+        }
+    }
     if (n > 1 && (pressed & (KEY_LEFT | KEY_UP | KEY_L))) {
         inv_sel = (inv_sel + n - 1) % n;
         sfx_move();
-        draw_inventory();
+        inventory_detail();
     }
     if (n > 1 && (pressed & (KEY_RIGHT | KEY_DOWN | KEY_R))) {
         inv_sel = (inv_sel + 1) % n;
         sfx_move();
-        draw_inventory();
+        inventory_detail();
     }
-    if (pressed & (KEY_B | KEY_START | KEY_A)) {
+    int sel = 0;
+    if (buttons_update(back_button, 1, &sel) == 0 || (pressed & KEY_B)) {
+        show_detail(DETAIL_NONE, 0, "");
         state = ST_PAUSE;
-        dim(1, PAUSE_DIM);
-        text_clear();
-        draw_hud();
-        draw_pause_menu();
+        menu_sel = 1;
+        draw_pause();
+        hud_text();
     }
 }
 
-static void update_pause(uint16_t pressed)
+static void update_pause(void)
 {
-    if (menu_move(pressed, PAUSE_COUNT)) draw_pause_menu();
-    int resume = (pressed & KEY_B) || ((pressed & (KEY_A | KEY_START)) && menu_sel == PAUSE_RESUME);
-    if (resume) {
-        dim(0, 0);
-        text_clear();
-        draw_hud();
-        state = paused_from;
-        music_resume();
-    } else if ((pressed & (KEY_A | KEY_START)) && menu_sel == PAUSE_INVENTORY) {
+    if (pressed & (KEY_B | KEY_START)) {
+        resume();
+        return;
+    }
+    switch (buttons_update(pause_buttons, 3, &menu_sel)) {
+    case 0:
+        resume();
+        break;
+    case 1:
         open_inventory();
-    } else if ((pressed & (KEY_A | KEY_START)) && menu_sel == PAUSE_QUIT) {
+        break;
+    case 2:
         record_run();
         go_title();
+        break;
     }
 }
 
-static void update_title(uint16_t pressed)
+// Icons on the menu cards, drawn every frame.
+static void ui_sprites(void)
 {
-    if (state == ST_TITLE) {
-        text_center(13, (frames & 32) ? "           " : "PRESS START", TXT_PLAIN);
-        if (pressed & (KEY_START | KEY_A)) {
-            state = ST_MENU;
-            menu_sel = MAIN_PLAY;
-            text_center(13, "           ", TXT_PLAIN);
-            draw_main_menu();
+    if (state == ST_SHOP) {
+        for (int s = 0; s < SHOP_SLOTS; s++)
+            if (game.shop[s] >= 0)
+                spr(BOT, OBJ_UI + s, 16, (4 + s * 5) * 8 + 4, SpriteSize_32x32, TILE_BIGICON(game.shop[s]),
+                    PAL_ICON, 0);
+    } else if (state == ST_SWAP) {
+        for (int i = 0; i < game.nitems; i++)
+            spr(BOT, OBJ_UI + i, 16, (3 + i * 3) * 8 + 4, SpriteSize_16x16, TILE_ICON(game.items[i]), PAL_ICON, 0);
+    } else if (state == ST_PERK) {
+        for (int c = 0; c < PERK_CHOICES; c++)
+            spr(BOT, OBJ_UI + c, 16, (4 + c * 8) * 8 + 12, SpriteSize_32x32, TILE_BIGPERK(game.perk_offer[c]),
+                PAL_ICON, 0);
+    } else if (state == ST_INVENTORY) {
+        for (int k = 0; k < game.nitems + game.nperks; k++) {
+            int x, y;
+            inventory_pos(k, &x, &y);
+            int t = k < game.nitems ? TILE_BIGICON(game.items[k]) : TILE_BIGPERK(game.perks[k - game.nitems]);
+            spr(BOT, OBJ_UI + k, x, y - (k == inv_sel ? 3 : 0), SpriteSize_32x32, t,
+                k == inv_sel ? PAL_ICON_FLASH : PAL_ICON, 0);
         }
+    }
+}
+
+// ---------------------------------------------------------------- play
+
+static int pause_tapped(void) { return tapped_in(224, 0, 32, 20); }
+
+static void update_aim(void)
+{
+    if ((pressed & KEY_START) || pause_tapped()) {
+        pause_game();
         return;
     }
-    if (menu_move(pressed, MAIN_COUNT)) draw_main_menu();
-    if (pressed & KEY_B) {
-        state = ST_TITLE;
-        draw_title_text();
+    // touch: drag to aim, let go to launch; letting go up by the launcher cancels
+    if (tapped) aiming_by_touch = 1;
+    if (touching && aiming_by_touch) aim = game_aim_at(tx, ty);
+    int launch = 0;
+    if (released && aiming_by_touch) {
+        aiming_by_touch = 0;
+        launch = ty > LAUNCH_Y + 10;
+    }
+    if (held & KEY_LEFT) aim--;               // negative angles aim left
+    if (held & KEY_RIGHT) aim++;
+    if (pressed & KEY_L) aim--;               // shoulders nudge one step for fine aim
+    if (pressed & KEY_R) aim++;
+    if (aim > AIM_MAX) aim = AIM_MAX;
+    if (aim < -AIM_MAX) aim = -AIM_MAX;
+    if (launch || (pressed & KEY_A)) {
+        game_launch(&game, aim);
+        board_effects();                      // launch items (Pump, Seeder) change the board
+        sfx_launch();
+        state = ST_FLY;
+    }
+    hud_text();
+}
+
+static void update_fly(void)
+{
+    if ((pressed & KEY_START) || pause_tapped()) {
+        pause_game();
         return;
     }
-    if (!(pressed & (KEY_A | KEY_START))) return;
-    switch (menu_sel) {
-    case MAIN_PLAY:
+    Events ev;
+    int out = game_step(&game, &ev);
+    int px = board_effects();
+    if (ev.laser) {
+        sfx_laser();
+        shake_timer = 14;
+        set_face(FACE_WORRY, 40);
+    } else if (ev.armor) {
+        sfx_armor();
+    } else if (ev.spring) {
+        sfx_spring();
+    } else if (ev.pop) {
+        sfx_peg(ev.hits, ev.gone ? SFX_POP_GONE : SFX_POP, px < 0 ? game.x >> 8 : px);
+    } else if (ev.item) {
+        sfx_item();
+    } else if (ev.wall) {
+        sfx_wall(game.x >> 8);
+    }
+    if (ev.pop && (ev.hits % 8 == 0 || (game.score >= game.quota && face != FACE_WOW))) set_face(FACE_WOW, 40);
+    else if ((game.y >> 8) > FLOOR_Y - 30 && game.score < game.quota && !face_timer) set_face(FACE_WORRY, 20);
+    hud_text();
+    if (out) finish_launch();
+}
+
+static void update_result(void)
+{
+    if (--timer > 0 && !tapped && !(pressed & (KEY_A | KEY_START))) return;
+    if (last_result == RESULT_CLEARED) {
+        if (game_perk_due(&game)) open_perks();
+        else next_after_perk();
+    } else {
+        text_clear(BOT);
+        dim(BOT, 0);
+        sync_board();
+        state = ST_AIM;
+        aiming_by_touch = 0;
+        hud_text();
+    }
+}
+
+static void update_title(void)
+{
+    if (pressed & KEY_START) {
+        new_run();
+        return;
+    }
+    switch (buttons_update(title_buttons, 3, &menu_sel)) {
+    case 0:
         new_run();
         break;
-    case MAIN_HOWTO:
+    case 1:
         show_howto();
         break;
-    case MAIN_CREDITS:
+    case 2:
         start_credits();
         break;
     }
@@ -969,57 +1318,61 @@ static void update_title(uint16_t pressed)
 
 int main(void)
 {
-    init_video();
+    gfx_init();
     sound_init();
     save_load();
     go_title();
 
     for (;;) {
-        prev_keys = keys;
-        keys = ~REG_KEYINPUT & 0x03FF;
-        uint16_t pressed = keys & ~prev_keys;
-        seed = seed * 1664525u + 1013904223u + keys;
-
+        read_input();
         switch (state) {
         case ST_TITLE:
-        case ST_MENU:
-            update_title(pressed);
+            update_title();
             break;
-        case ST_HOWTO:
-            if (pressed & (KEY_A | KEY_B | KEY_START)) back_to_menu(MAIN_HOWTO);
+        case ST_HOWTO: {
+            int sel = 0;
+            if (buttons_update(back_button, 1, &sel) == 0 || (pressed & (KEY_B | KEY_START))) back_to_title(1);
             break;
+        }
         case ST_CREDITS:
-            update_credits(pressed);
+            update_credits();
             break;
         case ST_AIM:
-            update_aim(pressed);
+            update_aim();
             break;
         case ST_FLY:
-            update_fly(pressed);
+            update_fly();
             break;
         case ST_RESULT:
             update_result();
             break;
         case ST_PERK:
-            update_perks(pressed);
+            update_perks();
             break;
         case ST_SHOP:
-            update_shop(pressed);
+            update_shop();
+            break;
+        case ST_SWAP:
+            update_swap();
             break;
         case ST_PAUSE:
-            update_pause(pressed);
+            update_pause();
             break;
         case ST_INVENTORY:
-            update_inventory(pressed);
+            update_inventory();
             break;
         case ST_BOSS:
-            update_boss_intro(pressed);
+            if (tapped || (pressed & (KEY_A | KEY_START))) {
+                dim(BOT, 0);
+                text_clear(BOT);
+                state = ST_AIM;
+                aiming_by_touch = 0;
+            }
             break;
         case ST_OVER:
-            if (pressed & KEY_START) go_title();
+            if (tapped || (pressed & (KEY_A | KEY_START))) go_title();
             break;
         }
-
         frame();
     }
 }

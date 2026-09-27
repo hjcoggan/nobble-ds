@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Generate source/assets.c and include/assets.h for Nubby GBA: palettes,
-256-color background images (title + factory boards), sprite and font tiles.
-Also writes build/preview_*.png for a quick look.
+"""Generate the Nubby DS assets:
+  data/*.bin            full-colour 256x192 backgrounds (RGB15 with the alpha bit)
+  source/assets.c       palettes, sprite tiles and text-layer tiles
+  include/assets.h
+and build/preview_*.png for a quick look (both screens stacked like a DS).
 
 Run from the repo root:  python3 tools/gen_assets.py
 """
@@ -11,9 +13,7 @@ import struct
 import zlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-W, H = 240, 160
-BG_FIRST_COLOR = 32        # palette 0-31 is shared with the text layer
-BG_MAX_COLORS = 256 - BG_FIRST_COLOR
+W, H = 256, 192            # one DS screen
 
 
 def rgb15(r, g, b):
@@ -186,54 +186,9 @@ SMALL_GLYPHS = {
 
 
 
-# ---------------------------------------------------------------- quantize
-def quantize(cv, max_colors):
-    """Median-cut the image down to max_colors. Returns (palette, index rows)."""
-    counts = {}
-    for row in cv.px:
-        for c in row:
-            k = rgb15(*c)
-            counts[k] = counts.get(k, 0) + 1
-
-    def comps(k):
-        return (k & 31, (k >> 5) & 31, (k >> 10) & 31)
-
-    boxes = [list(counts)]
-    while len(boxes) < max_colors:
-        best, best_score, best_ch = None, -1, 0
-        for i, b in enumerate(boxes):
-            if len(b) < 2:
-                continue
-            for ch in range(3):
-                vals = [comps(k)[ch] for k in b]
-                rng = max(vals) - min(vals)
-                score = rng * sum(counts[k] for k in b)
-                if score > best_score:
-                    best, best_score, best_ch = i, score, ch
-        if best is None:
-            break
-        b = sorted(boxes[best], key=lambda k: comps(k)[best_ch])
-        tot = sum(counts[k] for k in b)
-        acc, cut = 0, 1
-        for j, k in enumerate(b):
-            acc += counts[k]
-            if acc >= tot / 2:
-                cut = max(1, min(len(b) - 1, j))
-                break
-        boxes[best:best + 1] = [b[:cut], b[cut:]]
-
-    pal, lut = [], {}
-    for b in boxes:
-        tot = sum(counts[k] for k in b)
-        avg = [round(sum(comps(k)[ch] * counts[k] for k in b) / tot) for ch in range(3)]
-        idx = len(pal)
-        pal.append(avg[0] | (avg[1] << 5) | (avg[2] << 10))
-        for k in b:
-            lut[k] = idx
-    rows = [[lut[rgb15(*c)] for c in row] for row in cv.px]
-    return pal, rows
 
 
+# ---------------------------------------------------------------- tiles and palettes
 def to_tiles(img, w, h, bpp=4):
     """Tiles in row-major order, returned as u32 words."""
     words = []
@@ -249,23 +204,9 @@ def to_tiles(img, w, h, bpp=4):
     return words
 
 
-def bg_image(cv):
-    pal, rows = quantize(cv, BG_MAX_COLORS)
-    full = [0] * 256
-    for i, c in enumerate(pal):
-        full[BG_FIRST_COLOR + i] = c
-    idx = [[BG_FIRST_COLOR + v for v in row] for row in rows]
-    return full, to_tiles(idx, W, H, 8), idx
-
-
-def pal_to_rgb(pal):
-    return [((c & 31) << 3, ((c >> 5) & 31) << 3, ((c >> 10) & 31) << 3) for c in pal]
-
-
 def pal16(cols):
     cols = list(cols) + [(0, 0, 0)] * (16 - len(cols))
     return [rgb15(*c) for c in cols]
-
 
 
 # ---------------------------------------------------------------- font
@@ -319,8 +260,8 @@ GLYPHS = {
     "%": "##..# ##.#. ...#. ..#.. .#... .#.## #..##",
     "/": "....# ...#. ...#. ..#.. .#... .#... #....",
 }
-# styles: plain, on a panel, highlighted on a panel, gold (no panel), dimmed on a panel
-FONT_STYLES = [(1, 2, 0), (1, 2, 3), (6, 2, 3), (6, 2, 0), (8, 2, 3)]
+# styles: plain, on a panel, highlighted on a panel, gold (no panel), dimmed on a panel, teal
+FONT_STYLES = [(1, 2, 0), (1, 2, 3), (6, 2, 3), (6, 2, 0), (8, 2, 3), (9, 2, 0)]   # ... and teal (LCD labels)
 font_tiles = []
 for fg, sh, bgc in FONT_STYLES:
     for ch in FONT_CHARS:
@@ -354,6 +295,7 @@ for spec in [(1, 0, 1, 0), (1, 0, 0, 0), (1, 0, 0, 1), (0, 0, 1, 0),
     font_tiles += frame_tile(*spec)
 
 
+
 # ---------------------------------------------------------------- emit C
 def c_array(ctype, name, vals, per_line=12, fmt="{}"):
     lines = []
@@ -378,14 +320,19 @@ def write_png(path, rows):
 
 
 
+
+
 # ================================================================ Nubby artwork
-BOARD_L, BOARD_R = 40, 200
-LAUNCH_X, LAUNCH_Y = 120, 18
-PIT_Y = 150
-# must match slots[] in source/game.c
-SLOTS = [(66, 42), (102, 42), (138, 42), (174, 42), (84, 60), (120, 60), (156, 60),
-         (66, 78), (102, 78), (138, 78), (174, 78), (84, 96), (120, 96), (156, 96),
-         (66, 114), (102, 114), (138, 114), (174, 114), (84, 132), (120, 132), (156, 132)]
+# must match include/game.h and slots[] in source/game.c
+BOARD_L, BOARD_R = 10, 246
+LAUNCH_X, LAUNCH_Y = 128, 22
+PEG_R = 9
+PIT_Y = 182
+ROWS_Y = [46, 70, 94, 118, 142, 166]
+SLOTS = []
+for _r, _y in enumerate(ROWS_Y):
+    for _x in ([51, 89, 127, 165, 203] if _r % 2 == 0 else [32, 70, 108, 146, 184, 222]):
+        SLOTS.append((_x, _y))
 LIGHT = (-0.6, -0.8)
 
 INK = (28, 20, 36)
@@ -490,29 +437,6 @@ def gear(cv, cx, cy, r, teeth, col):
                 lit = -(dx * LIGHT[0] + dy * LIGHT[1]) / max(d, 1)
                 cv.put(x, y, scale(col, 0.9 - 0.25 * lit))
 
-
-BOARD_THEMES = [
-    dict(name="steel", wall=(54, 62, 84), board=(78, 96, 128)),
-    dict(name="copper", wall=(84, 54, 40), board=(150, 96, 62)),
-    dict(name="lab", wall=(40, 72, 70), board=(84, 150, 138)),
-]
-
-
-def render_board(t, seed):
-    cv = Canvas()
-    pegboard(cv, t["board"], seed)
-    steel_panel(cv, 0, BOARD_L, t["wall"], seed + 1)
-    steel_panel(cv, BOARD_R, W, t["wall"], seed + 2)
-    for y in range(H):                     # frame where the panels meet the board
-        cv.put(BOARD_L - 1, y, scale(t["wall"], 0.45))
-        cv.put(BOARD_L, y, (200, 204, 214))
-        cv.put(BOARD_R - 1, y, (200, 204, 214))
-        cv.put(BOARD_R, y, scale(t["wall"], 0.45))
-    pipe(cv, 2, BOARD_L, BOARD_R, (170, 176, 190))
-    launcher(cv, (170, 176, 190))
-    slot_rings(cv, t["board"])
-    shredder(cv)
-    return cv
 
 
 # ---------------------------------------------------------------- title
@@ -657,32 +581,6 @@ def glossy_ball(cv, cx, cy, r, col, label=None):
                             cv.put(lx + (i * (gw + 1) + gx) * cell + xx, ly + gy * cell + yy, INK)
 
 
-def render_title():
-    cv = Canvas()
-
-    def sky(x, y):
-        t = y / H
-        c = mix((36, 96, 214), (150, 214, 252), t)
-        n = fbm(x / 34, y / 14, 17, 4) + 0.35 * fbm(x / 9, y / 7, 23, 2) - 0.25 * (1 - t)
-        if n > 0.62:                                     # fluffy clouds
-            k = min(1.0, (n - 0.62) / 0.14)
-            cloud = mix((196, 214, 240), (255, 255, 255), min(1.0, max(0.0, (0.95 - t) * 1.2)))
-            c = mix(c, scale(cloud, 0.93 + 0.07 * fbm(x / 4, y / 4, 5, 2)), k)
-        return c
-    cv.each(lambda x, y, c: sky(x, y))
-
-    red = dict(face_top=(255, 96, 80), face_bot=(196, 18, 30), gloss=(255, 206, 196),
-               side=(120, 8, 22), outline=(56, 0, 12))
-    bubble_text(cv, bubble_mask("NUBBY", LOGO, 5, 1, 5, [3, 0, 2, -1, 1]), 4, **red)
-    bubble_text(cv, bubble_mask("GBA", SMALL_GLYPHS, 3, 1, 50, [0, 1, 0]), 3, **red)
-
-    draw_big_nubby(cv, 30, 104, 19)
-    glossy_ball(cv, 206, 98, 16, (60, 190, 80), "8")
-    glossy_ball(cv, 186, 125, 9, (250, 130, 40), "2")
-    glossy_ball(cv, 224, 126, 9, (60, 140, 240), "16")
-    glossy_ball(cv, 60, 127, 9, (190, 90, 230), "4")
-    return cv
-
 
 # ---------------------------------------------------------------- sprites
 NUBBY_PAL = [(0, 0, 0), NUBBY_BODY[0], NUBBY_BODY[1], NUBBY_BODY[2], NUBBY_BODY[3], INK, (255, 255, 255),
@@ -806,50 +704,413 @@ def icon_sprite(colour, symbol, round_badge=False):
     return img
 
 
+
+
+# ---------------------------------------------------------------- DS board (bottom screen)
+def launcher(cv, base):
+    """Nozzle hanging from the pipe that Nubby is fired from."""
+    for y in range(9, 18):
+        w = 8 if y < 15 else 7
+        for x in range(LAUNCH_X - w, LAUNCH_X + w):
+            k = 1.35 if x < LAUNCH_X - w + 2 else 0.6 if x > LAUNCH_X + w - 3 else 1.0
+            cv.put(x, y, scale(base, k * (0.8 if y == 17 else 1)))
+    for x in range(LAUNCH_X - 6, LAUNCH_X + 6):
+        cv.put(x, 17, (30, 26, 34))
+
+
+def slot_rings(cv, base):
+    """Faint sockets so empty peg slots are still visible."""
+    for sx, sy in SLOTS:
+        for y in range(sy - 12, sy + 13):
+            for x in range(sx - 12, sx + 13):
+                d = math.hypot(x + 0.5 - sx, y + 0.5 - sy)
+                if 7.0 < d < 9.5:
+                    lit = ((x - sx) * LIGHT[0] + (y - sy) * LIGHT[1]) / max(d, 1)
+                    cv.put(x, y, scale(cv.get(x, y), 0.72 + 0.25 * lit))
+
+
+BOARD_THEMES = [
+    dict(name="steel", wall=(54, 62, 84), board=(78, 96, 128)),
+    dict(name="copper", wall=(84, 54, 40), board=(150, 96, 62)),
+    dict(name="lab", wall=(40, 72, 70), board=(84, 150, 138)),
+]
+
+
+def render_board(t, seed):
+    cv = Canvas()
+    pegboard(cv, t["board"], seed)
+    steel_panel(cv, 0, BOARD_L, t["wall"], seed + 1)
+    steel_panel(cv, BOARD_R, W, t["wall"], seed + 2)
+    for y in range(H):                     # frame where the panels meet the board
+        cv.put(BOARD_L - 1, y, scale(t["wall"], 0.45))
+        cv.put(BOARD_L, y, (200, 204, 214))
+        cv.put(BOARD_R - 1, y, (200, 204, 214))
+        cv.put(BOARD_R, y, scale(t["wall"], 0.45))
+    pipe(cv, 3, 0, W, (170, 176, 190))
+    launcher(cv, (170, 176, 190))
+    slot_rings(cv, t["board"])
+    shredder(cv)
+    return cv
+
+
+# ---------------------------------------------------------------- title (both screens)
+SMALL_GLYPHS["D"] = ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."]
+SMALL_GLYPHS["S"] = [".####", "#....", "#....", ".###.", "....#", "....#", "####."]
+RED_LOGO = dict(face_top=(255, 96, 80), face_bot=(196, 18, 30), gloss=(255, 206, 196),
+                side=(120, 8, 22), outline=(56, 0, 12))
+
+
+def sky(y_off=0, seed=17):
+    def f(x, y, c):
+        yy = y + y_off
+        t = yy / (2 * H)
+        c = mix((36, 96, 214), (170, 222, 252), t)
+        n = fbm(x / 34, yy / 14, seed, 4) + 0.35 * fbm(x / 9, yy / 7, seed + 6, 2) - 0.2 * (1 - t)
+        if n > 0.62:                                     # fluffy clouds
+            k = min(1.0, (n - 0.62) / 0.14)
+            cloud = mix((196, 214, 240), (255, 255, 255), min(1.0, max(0.0, (0.95 - t) * 1.3)))
+            c = mix(c, scale(cloud, 0.93 + 0.07 * fbm(x / 4, yy / 4, 5, 2)), k)
+        return c
+    return f
+
+
+def render_title_top():
+    cv = Canvas()
+    cv.each(sky(0))
+    bubble_text(cv, bubble_mask("NUBBY", LOGO, 6, 1, 10, [3, 0, 2, -1, 1]), 5, **RED_LOGO)
+    bubble_text(cv, bubble_mask("DS", SMALL_GLYPHS, 4, 1, 68, [0, 2]), 4, **RED_LOGO)
+    draw_big_nubby(cv, 46, 140, 28)
+    glossy_ball(cv, 208, 132, 20, (60, 190, 80), "8")
+    glossy_ball(cv, 166, 170, 12, (250, 130, 40), "2")
+    glossy_ball(cv, 236, 176, 11, (60, 140, 240), "16")
+    glossy_ball(cv, 100, 172, 11, (190, 90, 230), "4")
+    glossy_ball(cv, 124, 124, 8, (240, 80, 70), "1")
+    return cv
+
+
+def render_title_bottom():
+    cv = Canvas()
+    cv.each(sky(H + 40))
+    glossy_ball(cv, 22, 24, 12, (250, 214, 60), "32")
+    glossy_ball(cv, 234, 36, 13, (240, 110, 190), "64")
+    glossy_ball(cv, 18, 150, 10, (90, 200, 220), "4")
+    glossy_ball(cv, 240, 150, 9, (110, 210, 110), "2")
+    for y in range(172, H):                              # a conveyor along the bottom
+        for x in range(W):
+            c = (70, 66, 72) if ((x + y) // 3) % 2 else (46, 42, 50)
+            if y == 172:
+                c = (150, 150, 160)
+            cv.put(x, y, c)
+    hazard(cv, 0, W, 170, 172)
+    return cv
+
+
+# ---------------------------------------------------------------- top screen dashboard
+# Windows in tile units (x, y, w, h); must match source/hud.c
+WIN_SCORE = (1, 3, 20, 8)
+WIN_FACE = (22, 3, 9, 8)
+WIN_ITEMS = (1, 13, 14, 11)
+WIN_PERKS = (16, 13, 15, 11)
+LCD = (22, 40, 44)
+
+
+def inset(cv, win, fill, bevel=(20, 22, 30), light=(150, 156, 176)):
+    x0, y0, w, h = (v * 8 for v in win)
+    x0 -= 3
+    y0 -= 3
+    x1, y1 = x0 + w + 6, y0 + h + 3
+    for y in range(y0, min(H, y1)):
+        for x in range(x0, x1):
+            e = min(x - x0, x1 - 1 - x, y - y0, y1 - 1 - y)
+            if e == 0:
+                c = light if (x == x1 - 1 or y == y1 - 1) else bevel
+            elif e == 1:
+                c = bevel
+            else:
+                c = fill(x, y) if callable(fill) else fill
+            cv.put(x, y, c)
+
+
+def render_dashboard():
+    cv = Canvas()
+    steel_panel(cv, 0, W, (66, 72, 96), 55)
+    for y in range(3, 21):                               # header band
+        for x in range(W):
+            cv.put(x, y, scale((34, 30, 44), 1.1 if y < 5 else 0.95))
+    hazard(cv, 0, W, 21, 23)
+
+    def lcd(x, y):
+        c = scale(LCD, 1.0 + 0.25 * (1 - y / H))
+        return scale(c, 0.85) if y % 2 else c            # scanlines
+    inset(cv, WIN_SCORE, lcd)
+    face_sky = sky(0, 29)
+    inset(cv, WIN_FACE, lambda x, y: face_sky(x * 2, y * 2 - 40, None))
+    inset(cv, WIN_ITEMS, lcd)
+    inset(cv, WIN_PERKS, lcd)
+    return cv
+
+
+# ---------------------------------------------------------------- DS sprites
+UI_PAL = [(0, 0, 0), (80, 24, 70), (170, 70, 140), (230, 110, 170), (255, 170, 210), (255, 236, 248),
+          INK, (255, 255, 255), (255, 120, 150), (230, 40, 60), (130, 10, 30), (240, 190, 50),
+          (150, 100, 20), (255, 240, 150), (120, 190, 255), (120, 124, 146)]
+
+
+def portrait(expr):
+    """64x64 Nubby face for the top screen: happy, blink, wow or worry."""
+    img = [[0] * 64 for _ in range(64)]
+    cx, cy, r = 32, 34, 27
+
+    def put(x, y, v):
+        if 0 <= x < 64 and 0 <= y < 64:
+            img[y][x] = v
+
+    def blob(px, py, rx, ry, v, keep_inside=True):
+        for y in range(int(py - ry - 1), int(py + ry + 2)):
+            for x in range(int(px - rx - 1), int(px + rx + 2)):
+                if ((x + 0.5 - px) / rx) ** 2 + ((y + 0.5 - py) / ry) ** 2 <= 1:
+                    put(x, y, v)
+    for y in range(64):
+        for x in range(64):
+            dx, dy = x + 0.5 - cx, y + 0.5 - cy
+            d = math.hypot(dx, dy)
+            if d > r:
+                continue
+            lit = -(dx * LIGHT[0] + dy * LIGHT[1]) / r
+            v = 1 if d > r - 1.6 else 2 if lit < -0.35 else 3 if lit < 0.3 else 4
+            if math.hypot(dx + r * 0.42, dy + r * 0.48) < r * 0.16:
+                v = 5
+            img[y][x] = v
+    for s in (-1, 1):
+        blob(cx + s * 15, 43, 3.6, 2.4, 8)               # blush
+        ex = cx + s * 9
+        if expr == "blink":
+            for k in range(-4, 5):
+                put(ex + k, 31 - (16 - k * k) // 8, 6)
+                put(ex + k, 32 - (16 - k * k) // 8, 6)
+        else:
+            big = expr == "wow"
+            blob(ex, 29, 5.2 + big, 6.3 + big, 7)
+            if expr == "worry":
+                blob(ex + s * 0.5, 32, 2.6, 3, 6)
+                for k in range(6):                        # worried brows
+                    put(ex - 3 + k, 20 + (k if s < 0 else 5 - k) // 2, 6)
+            else:
+                blob(ex + 1, 30 + (0 if big else 1), 2.2 if big else 3, 2.6 if big else 3.6, 6)
+                put(ex - 1, 26, 7)
+                put(ex, 26, 7)
+    if expr == "wow":
+        blob(cx, 47, 5, 6, 6)
+        blob(cx, 50, 3.2, 2.5, 9)
+    elif expr == "worry":
+        for k in range(-7, 8):
+            put(cx + k, 47 + (1 if (k // 2) % 2 else 0), 6)
+        blob(cx + 22, 18, 2.5, 3.6, 14)                   # sweat drop
+        put(cx + 21, 16, 7)
+    else:
+        for k in range(-8, 9):
+            y = 44 + int((1 - (k / 8.5) ** 2) * 4.5)
+            put(cx + k, y, 6)
+            put(cx + k, y + 1, 6)
+    return img
+
+
+def heart(full):
+    img = [[0] * 16 for _ in range(16)]
+    for y in range(16):
+        for x in range(16):
+            u, v = (x + 0.5 - 8) / 6.5, -(y + 0.5 - 7.5) / 6.5
+            f = (u * u + v * v - 1) ** 3 - u * u * v ** 3
+            if f <= 0:
+                edge = any(((((x + dx + 0.5 - 8) / 6.5) ** 2 + ((-(y + dy + 0.5 - 7.5) / 6.5)) ** 2 - 1) ** 3
+                            - ((x + dx + 0.5 - 8) / 6.5) ** 2 * (-(y + dy + 0.5 - 7.5) / 6.5) ** 3) > 0
+                           for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                if edge:
+                    img[y][x] = 10 if full else 6
+                elif full:
+                    img[y][x] = 7 if (x, y) in ((4, 4), (5, 4), (4, 5)) else 8 if u < -0.2 and v > 0.2 else 9
+                else:
+                    img[y][x] = 15
+    return img
+
+
+def coin():
+    img = [[0] * 16 for _ in range(16)]
+    for y in range(16):
+        for x in range(16):
+            d = math.hypot(x + 0.5 - 8, y + 0.5 - 8)
+            if d <= 7:
+                img[y][x] = 12 if d > 6 else 13 if (x + y) < 12 else 11
+    for r, row in enumerate(".###. #.#.# #.#.. .###. ..#.# #.#.# .###.".split()):
+        for c, p in enumerate(row):
+            if p == "#":
+                img[4 + r][6 + c] = 12
+    return img
+
+
+def icon_big(colour, symbol, round_badge=False):
+    """32x32 version of an item or perk icon, for the shop and detail views."""
+    light, dark = ICON_COLORS[colour]
+    img = [[0] * 32 for _ in range(32)]
+    for y in range(32):
+        for x in range(32):
+            if round_badge:
+                d = math.hypot(x + 0.5 - 16, y + 0.5 - 16)
+                if d > 15:
+                    continue
+                edge = d > 13.2
+            else:
+                if not (1 <= x <= 30 and 1 <= y <= 30):
+                    continue
+                cx, cy = min(max(x, 5), 26), min(max(y, 5), 26)
+                if math.hypot(x - cx, y - cy) > 4.5:
+                    continue                                  # rounded corners
+                edge = x in (1, 2, 29, 30) or y in (1, 2, 29, 30) or math.hypot(x - cx, y - cy) > 3
+            img[y][x] = 1 if edge else (light if y < 16 else dark)
+            if not edge and y in (4, 5) and 6 < x < 25:
+                img[y][x] = 2 if y == 4 else light              # gloss
+    rows = symbol.split()
+    for pass_, (ox, oy, v) in enumerate(((7, 8, 1), (6, 7, 2))):
+        for r, row in enumerate(rows):
+            for c, p in enumerate(row):
+                if p == "#":
+                    for yy in range(2):
+                        for xx in range(2):
+                            img[oy + r * 2 + yy][ox + 5 + c * 2 + xx] = v
+    return img
+
+
+PAUSE_SYMBOL = "##.## ##.## ##.## ##.## ##.## ##.## ##.##"
+
+
 # ---------------------------------------------------------------- build everything
 FONT_PAL = [(0, 0, 0), (255, 255, 255), (24, 18, 30), (40, 44, 62), (240, 196, 60),
-            (150, 100, 20), (255, 226, 90), (70, 76, 100), (118, 122, 146)]
+            (150, 100, 20), (255, 226, 90), (70, 76, 100), (118, 122, 146), (80, 220, 200), (30, 110, 100)]
 font_pal = pal16(FONT_PAL)
+
+# progress bar tiles: 0-8 pixels filled, in teal and in gold (goal met)
+BAR_TILE = len(font_tiles) // 8
+for fill_c in (9, 6):
+    for n in range(9):
+        img = [[0] * 8 for _ in range(8)]
+        for x in range(8):
+            img[1][x] = img[6][x] = 7
+            for y in range(2, 6):
+                img[y][x] = (fill_c if y > 2 else 1) if x < n else 3
+        font_tiles += to_tiles(img, 8, 8)
+
+# big 16x16 digits for the score: 2x2 tiles each
+BIGDIGIT_TILE = len(font_tiles) // 8
+for d in "0123456789":
+    img = [[0] * 16 for _ in range(16)]
+    for r, row in enumerate(GLYPHS[d].split()):
+        for c, p in enumerate(row):
+            if p == "#":
+                for yy in range(2):
+                    for xx in range(2):
+                        img[1 + r * 2 + yy + 1][3 + c * 2 + xx + 1] = 2          # shadow
+    for r, row in enumerate(GLYPHS[d].split()):
+        for c, p in enumerate(row):
+            if p == "#":
+                for yy in range(2):
+                    for xx in range(2):
+                        img[1 + r * 2 + yy][3 + c * 2 + xx] = 6 if r < 3 else 4
+    font_tiles += to_tiles(img, 16, 16)       # tiles in order: TL, TR, BL, BR
+
+STEEL = (118, 128, 156)
+FX_PAL = [(0, 0, 0), (110, 0, 20), (230, 30, 40), (255, 130, 150), (255, 255, 255), (150, 200, 240), (225, 240, 255)]
 obj_pal = pal16(NUBBY_PAL)
 for p in TIER_PALS:
     obj_pal += pal16([(0, 0, 0)] + p)
 obj_pal += pal16([(0, 0, 0)] + FLASH_PAL)
 obj_pal += pal16(ICON_PAL)
 obj_pal += pal16([ICON_PAL[0]] + [mix(c, (255, 255, 255), 0.55) for c in ICON_PAL[1:]])   # flash
-STEEL = (118, 128, 156)
 obj_pal += pal16([(0, 0, 0), scale(STEEL, 0.4), scale(STEEL, 0.75), STEEL, (220, 228, 245), (255, 255, 255)])  # armour
-FX_PAL = [(0, 0, 0), (110, 0, 20), (230, 30, 40), (255, 130, 150), (255, 255, 255), (150, 200, 240), (225, 240, 255)]
 obj_pal += pal16(FX_PAL)                        # laser and wind
+obj_pal += pal16(UI_PAL)                        # portrait, hearts, coins, score popups
+assert len(obj_pal) == 256
 
-# sprite tiles (4bpp, 1D mapping); record where each sprite starts
+# sprite tiles (4bpp, 1D mapping with 128-byte steps: every sprite starts on a multiple of 4 tiles)
 obj_tiles, tile_of = [], {}
 
 
 def add_sprite(name, img):
+    while len(obj_tiles) % 32:
+        obj_tiles.append(0)
     tile_of[name] = len(obj_tiles) // 8
     obj_tiles.extend(to_tiles(img, len(img[0]), len(img)))
 
 
-add_sprite("nubby", nubby_sprite(False))
-add_sprite("nubby_blink", nubby_sprite(True))
-add_sprite("nubby_big", nubby_sprite(False, 16, 6.1))
-add_sprite("nubby_big_blink", nubby_sprite(True, 16, 6.1))
-add_sprite("peg", peg_sprite(16, 7.6))          # template; numbers are drawn on in game
+add_sprite("nubby", nubby_sprite(False, 16, 5.4))
+add_sprite("nubby_blink", nubby_sprite(True, 16, 5.4))
+add_sprite("nubby_big", nubby_sprite(False, 16, 7.4))
+add_sprite("nubby_big_blink", nubby_sprite(True, 16, 7.4))
+add_sprite("peg", peg_sprite(32, 9.6))          # template; numbers are drawn on in game
 dot = [[0] * 8 for _ in range(8)]
 dot[3][3] = dot[3][4] = dot[4][3] = dot[4][4] = 6    # white
 dot[5][4] = dot[4][5] = dot[5][5] = 5
 add_sprite("dot", dot)
-add_sprite("laser_warn", [[2 if y in (3, 4) and x % 4 < 2 else 0 for x in range(8)] for y in range(8)])
-add_sprite("laser", [[[1, 2, 3, 4, 4, 3, 2, 1][y]] * 8 for y in range(8)])
-add_sprite("wind", [[0] * 8, [0] * 8, [0] * 8, [0, 5, 5, 5, 6, 6, 6, 0], [0, 0, 5, 5, 5, 5, 0, 0], [0] * 8, [0] * 8, [0] * 8])
+add_sprite("spark", [[0] * 8, [0] * 8, [0, 0, 0, 3, 3, 0, 0, 0], [0, 0, 3, 4, 3, 3, 0, 0],
+                     [0, 0, 3, 3, 3, 2, 0, 0], [0, 0, 0, 3, 2, 0, 0, 0], [0] * 8, [0] * 8])
+add_sprite("laser_warn", [[2 if y in (3, 4) and x % 6 < 3 else 0 for x in range(32)] for y in range(8)])
+add_sprite("laser", [[[1, 2, 3, 4, 4, 3, 2, 1][y]] * 32 for y in range(8)])
+add_sprite("wind", [[0] * 16, [0] * 16, [0] * 16, [0, 0] + [5] * 8 + [6] * 5 + [0], [0, 0, 0, 0] + [5] * 8 + [0] * 4,
+                    [0] * 16, [0] * 16, [0] * 16])
+add_sprite("pause", icon_sprite("gray", PAUSE_SYMBOL))
 for i, (colour, sym) in enumerate(ICONS):
     add_sprite(f"icon{i}", icon_sprite(colour, sym))
 for i, (colour, sym) in enumerate(PERK_ICONS):
     add_sprite(f"perk{i}", icon_sprite(colour, sym, True))
+for i, (colour, sym) in enumerate(ICONS):
+    add_sprite(f"bigicon{i}", icon_big(colour, sym))
+for i, (colour, sym) in enumerate(PERK_ICONS):
+    add_sprite(f"bigperk{i}", icon_big(colour, sym, True))
+FACES = ["happy", "blink", "wow", "worry"]
+for f in FACES:
+    add_sprite(f"face_{f}", portrait(f))
+add_sprite("heart", heart(True))
+add_sprite("heart_empty", heart(False))
+add_sprite("coin", coin())
+while len(obj_tiles) % 32:
+    obj_tiles.append(0)
+TILE_FREE = len(obj_tiles) // 8
+PEG_TILES = 16                                    # 32x32 4bpp
+POPUP_TILES = 8                                   # 32x16 4bpp
+NUM_POPUPS = 6
+assert TILE_FREE + 33 * PEG_TILES + NUM_POPUPS * POPUP_TILES <= 4096, "out of sprite VRAM"
 
-title_cv = render_title()
-title_pal, title_tiles, title_idx = bg_image(title_cv)
-board_imgs = [bg_image(render_board(t, 100 + i * 13)) for i, t in enumerate(BOARD_THEMES)]
+
+def bitmap16(cv):
+    """Raw RGB15 pixels with the alpha bit set, little-endian."""
+    return b"".join(struct.pack("<H", rgb15(*c) | 0x8000) for row in cv.px for c in row)
+
+
+def write_icon_bmp(path, img, pal):
+    """32x32 16-colour BMP for the DS menu icon (magenta = transparent)."""
+    rows = b""
+    for y in range(31, -1, -1):
+        for x in range(0, 32, 2):
+            rows += bytes([(img[y][x] << 4) | img[y][x + 1]])
+    colours = b"".join(bytes([b, g, r, 0]) for (r, g, b) in pal)
+    off = 14 + 40 + len(colours)
+    hdr = b"BM" + struct.pack("<IHHI", off + len(rows), 0, 0, off)
+    info = struct.pack("<IiiHHIIiiII", 40, 32, 32, 1, 4, 0, len(rows), 2835, 2835, 16, 16)
+    with open(path, "wb") as f:
+        f.write(hdr + info + colours + rows)
+
+
+face = portrait("happy")
+write_icon_bmp(os.path.join(ROOT, "icon.bmp"),
+               [[face[min(63, y * 2 + 1)][x * 2 + 1] for x in range(32)] for y in range(32)],
+               [(255, 0, 255)] + [tuple(int(v) for v in c) for c in UI_PAL[1:]])
+
+BITMAPS = {"title_top": render_title_top(), "title_bottom": render_title_bottom(), "dashboard": render_dashboard()}
+for i, t in enumerate(BOARD_THEMES):
+    BITMAPS[f"board{i}"] = render_board(t, 100 + i * 13)
+os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
+for name, cv in BITMAPS.items():
+    with open(os.path.join(ROOT, "data", name + ".bin"), "wb") as f:
+        f.write(bitmap16(cv))
 
 # ---------------------------------------------------------------- emit C
 hdr = f"""// Generated by tools/gen_assets.py - do not edit.
@@ -861,23 +1122,34 @@ hdr = f"""// Generated by tools/gen_assets.py - do not edit.
 #define FONT_CHARS "{FONT_CHARS.replace(chr(39), chr(92) + chr(39))}"
 #define FONT_NCHARS {len(FONT_CHARS)}
 #define FRAME_TILE {len(FONT_CHARS) * len(FONT_STYLES)}
+#define BAR_TILE(n, gold) ({BAR_TILE} + (gold) * 9 + (n))   // progress bar, n of 8 pixels full
+#define BIGDIGIT_TILE(d) ({BIGDIGIT_TILE} + (d) * 4)        // 16x16 digit: TL, TR, BL, BR
 #define NUM_BOARDS {len(BOARD_THEMES)}
-#define BG_FIRST_COLOR {BG_FIRST_COLOR}
-#define BG_IMG_WORDS {len(title_tiles)}
 
-// sprite tiles and palette banks
+// sprite tiles (32-byte units) and palette banks
 #define TILE_NUBBY {tile_of["nubby"]}
 #define TILE_NUBBY_BLINK {tile_of["nubby_blink"]}
 #define TILE_NUBBY_BIG {tile_of["nubby_big"]}
 #define TILE_NUBBY_BIG_BLINK {tile_of["nubby_big_blink"]}
-#define TILE_PEG {tile_of["peg"]}           // 16x16 disc template (4 tiles)
+#define TILE_PEG {tile_of["peg"]}           // 32x32 disc template
 #define TILE_DOT {tile_of["dot"]}
+#define TILE_SPARK {tile_of["spark"]}
+#define TILE_LASER_WARN {tile_of["laser_warn"]}  // 32x8
+#define TILE_LASER {tile_of["laser"]}        // 32x8
+#define TILE_WIND {tile_of["wind"]}          // 16x8
+#define TILE_PAUSE {tile_of["pause"]}
 #define TILE_ICON(i) ({tile_of["icon0"]} + (i) * 4)
 #define TILE_PERK(i) ({tile_of["perk0"]} + (i) * 4)
-#define TILE_LASER_WARN {tile_of["laser_warn"]}
-#define TILE_LASER {tile_of["laser"]}
-#define TILE_WIND {tile_of["wind"]}
-#define TILE_FREE {len(obj_tiles) // 8}        // first unused sprite tile
+#define TILE_BIGICON(i) ({tile_of["bigicon0"]} + (i) * 16)
+#define TILE_BIGPERK(i) ({tile_of["bigperk0"]} + (i) * 16)
+#define TILE_FACE(f) ({tile_of["face_happy"]} + (f) * 64)   // 64x64: happy, blink, wow, worry
+#define TILE_HEART {tile_of["heart"]}
+#define TILE_HEART_EMPTY {tile_of["heart_empty"]}
+#define TILE_COIN {tile_of["coin"]}
+#define TILE_FREE {TILE_FREE}        // first unused sprite tile
+#define PEG_TILES {PEG_TILES}
+#define POPUP_TILES {POPUP_TILES}
+#define NUM_POPUPS {NUM_POPUPS}
 #define PAL_NUBBY 0
 #define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
 #define NUM_TIERS {len(TIERS)}
@@ -886,15 +1158,13 @@ hdr = f"""// Generated by tools/gen_assets.py - do not edit.
 #define PAL_ICON_FLASH {3 + len(TIERS)}
 #define PAL_ARMOR {4 + len(TIERS)}
 #define PAL_FX {5 + len(TIERS)}
+#define PAL_UI {6 + len(TIERS)}
 
 extern const uint16_t font_pal[16];
-extern const uint16_t obj_pal[{len(obj_pal)}];
-extern const uint16_t title_pal[256];
-extern const uint32_t title_tiles[BG_IMG_WORDS];
-extern const uint16_t *const board_pal[NUM_BOARDS];
-extern const uint32_t *const board_tiles[NUM_BOARDS];
+extern const uint16_t obj_pal[256];
 extern const uint32_t obj_tiles[{len(obj_tiles)}];
 extern const uint32_t font_tiles[{len(font_tiles)}];
+extern const uint8_t glyphs5x7[10][7];                // digit bitmaps, bit 4 = left column
 
 #endif
 """
@@ -902,15 +1172,13 @@ extern const uint32_t font_tiles[{len(font_tiles)}];
 src = "// Generated by tools/gen_assets.py - do not edit.\n#include \"assets.h\"\n\n"
 src += c_array("uint16_t", "font_pal", font_pal, 8, "0x{:04X}")
 src += c_array("uint16_t", "obj_pal", obj_pal, 8, "0x{:04X}")
-src += c_array("uint16_t", "title_pal", title_pal, 8, "0x{:04X}")
-src += c_array("uint32_t", "title_tiles", title_tiles, 8, "0x{:08X}")
-for i, (pal, tiles, _) in enumerate(board_imgs):
-    src += c_array("uint16_t", f"board{i}_pal", pal, 8, "0x{:04X}").replace("const", "static const", 1)
-    src += c_array("uint32_t", f"board{i}_tiles", tiles, 8, "0x{:08X}").replace("const", "static const", 1)
-src += "const uint16_t *const board_pal[NUM_BOARDS] = { " + ", ".join(f"board{i}_pal" for i in range(len(board_imgs))) + " };\n"
-src += "const uint32_t *const board_tiles[NUM_BOARDS] = { " + ", ".join(f"board{i}_tiles" for i in range(len(board_imgs))) + " };\n"
 src += c_array("uint32_t", "obj_tiles", obj_tiles, 8, "0x{:08X}")
 src += c_array("uint32_t", "font_tiles", font_tiles, 8, "0x{:08X}")
+src += "const uint8_t glyphs5x7[10][7] = {\n"
+for d in "0123456789":
+    rows = [int(r.replace("#", "1").replace(".", "0"), 2) for r in GLYPHS[d].split()]
+    src += "    { " + ", ".join(f"0x{v:02X}" for v in rows) + " },\n"
+src += "};\n"
 
 with open(os.path.join(ROOT, "include", "assets.h"), "w") as f:
     f.write(hdr)
@@ -919,201 +1187,21 @@ with open(os.path.join(ROOT, "source", "assets.c"), "w") as f:
 
 
 # ---------------------------------------------------------------- previews
-def to_rgb(pal, idx):
-    rgb = pal_to_rgb(pal)
-    return [[rgb[idx[y][x]] for x in range(W)] for y in range(H)]
+def rgb_of(cv):
+    return [list(row) for row in cv.px]
 
 
-def blit(img, spr, sx, sy, pal):
-    for y, row in enumerate(spr):
-        for x, v in enumerate(row):
-            if v and 0 <= sx + x < W and 0 <= sy + y < H:
-                img[sy + y][sx + x] = pal[v]
-
-
-def text(img, tx, ty, s, fg=(255, 255, 255)):
-    for i, ch in enumerate(s):
-        for r, row in enumerate(GLYPHS.get(ch, ". " * 7).split()):
-            for c, p in enumerate(row):
-                if p == "#":
-                    img[ty * 8 + r + 1][(tx + i) * 8 + c + 2] = FONT_PAL[2]
-                    img[ty * 8 + r][(tx + i) * 8 + c + 1] = fg
-
-
-PEG_BLIT = peg_sprite(16, 7.6)
-ICON_BLIT_PAL = [(0, 0, 0)] + ICON_PAL[1:]
-
-
-def draw_peg(img, sx, sy, v, pal=None, digit=INK):
-    tier = min(len(TIERS) - 1, v.bit_length() - 1)
-    blit(img, PEG_BLIT, sx - 8, sy - 8, pal or [(0, 0, 0)] + TIER_PALS[tier])
-    digits = str(v)
-    w = len(digits) * 4 - 1
-    for k, ch in enumerate(digits):
-        for r, row in enumerate(DIGITS3[int(ch)]):
-            for c, p in enumerate(row):
-                if p == "#":
-                    img[sy - 3 + r][sx - w // 2 + k * 4 + c] = digit
-
-
-def draw_panel(img, y, w, h):
-    """Same look as the in-game panel frame tiles."""
-    x0 = (30 - w) // 2 * 8
-    x1, y0, y1 = x0 + w * 8, y * 8, (y + h) * 8
-    for py in range(y0, y1):
-        for px in range(x0, x1):
-            e = min(px - x0, x1 - 1 - px, py - y0, y1 - 1 - py)
-            img[py][px] = FONT_PAL[5] if e == 0 else FONT_PAL[4] if e == 1 else \
-                FONT_PAL[7] if e == 2 and (px - x0 == 2 or py - y0 == 2) else FONT_PAL[3]
-
-
-def center(img, ty, s, fg=(255, 255, 255)):
-    text(img, (30 - len(s)) // 2, ty, s, fg)
-
-
-def shade_all(img, k):
-    for row in img:
-        row[:] = [scale(c, k) for c in row]
-
-
-def scene(theme, values, round_="4", goal="38", score="12", lives="3", coins="7",
-          items=(2, 3, 5, 7), perks=(0, 5), shop_in="2", boss=False, armor=(), nubby=None, aim=True):
-    pal, _, idx = board_imgs[theme]
-    img = to_rgb(pal, idx)
-    armor_pal = [(0, 0, 0), scale(STEEL, 0.4), scale(STEEL, 0.75), STEEL, (220, 228, 245)]
-    for i, ((sx, sy), v) in enumerate(zip(SLOTS, values)):
-        if v:
-            if i in armor:
-                draw_peg(img, sx, sy, v, armor_pal, (255, 255, 255))
-            else:
-                draw_peg(img, sx, sy, v)
-    nx, ny = nubby or (LAUNCH_X, LAUNCH_Y)
-    blit(img, nubby_sprite(False), nx - 4, ny - 4, NUBBY_PAL)
-    if aim:
-        for k in range(1, 7):
-            x, y = LAUNCH_X + k * 3, LAUNCH_Y + k * 4 + k * k // 4
-            blit(img, dot, x - 4, y - 4, NUBBY_PAL)
-    if boss:
-        text(img, 0, 1, "BOSS!", FONT_PAL[6])
-    else:
-        text(img, 0, 1, "ROUND")
-    for row, sv in ((2, round_), (5, goal), (8, score), (11, lives)):
-        text(img, 0, row, sv.rjust(5))
-    for row, sv in ((4, "GOAL"), (7, "SCORE"), (10, "LIVES")):
-        text(img, 0, row, sv)
-    text(img, 25, 1, "COINS")
-    text(img, 25, 2, coins.rjust(5))
-    text(img, 25, 3, "ITEMS")
-    text(img, 25, 4, " FULL" if len(items) == 5 else f"  {len(items)}/5", FONT_PAL[6] if len(items) == 5 else (255, 255, 255))
-    for i, it in enumerate(items):
-        blit(img, icon_sprite(*ICONS[it]), 214, 41 + i * 15, ICON_BLIT_PAL)
-    text(img, 25, 15, "SHOP")
-    text(img, 25, 16, "IN" + shop_in.rjust(3))
-    if perks:
-        text(img, 0, 13, "PERKS")
-    for i, pk in enumerate(perks):
-        blit(img, icon_sprite(*PERK_ICONS[pk], True), 2 + (i % 2) * 18, 112 + (i // 2) * 18, ICON_BLIT_PAL)
-    return img
-
-
-BOARD_VALUES = [1, 2, 1, 4, 2, 8, 1, 0, 2, 16, 4, 1, 2, 32, 1, 0, 4, 2, 8, 1, 2]
-
-
-def board_preview(n):
-    return scene(n, BOARD_VALUES)
-
-
-def laser_scene():
-    vals = [4, 8, 4, 2, 8, 16, 8, 4, 0, 8, 4, 16, 8, 16, 4, 8, 4, 2, 16, 8, 4]
-    img = scene(1, vals, round_="5", goal="96", score="40", coins="9", items=(3, 5, 1), perks=(1,),
-                shop_in="2", boss=True, nubby=(96, 70), aim=False)
-    for y in range(8):
-        for x in range(BOARD_L, BOARD_R):
-            img[96 - 4 + y][x] = FX_PAL[[1, 2, 3, 4, 4, 3, 2, 1][y]]
-    return img
-
-
-def armor_scene():
-    vals = [16, 8, 16, 32, 8, 64, 16, 8, 32, 16, 8, 16, 64, 8, 32, 16, 8, 16, 32, 8, 16]
-    img = scene(2, vals, round_="15", goal="412", score="136", lives="2", coins="4", items=(3, 5, 7, 8, 10),
-                perks=(0, 2, 6), shop_in="1", boss=True, armor=(3, 5, 8, 12, 14, 18), nubby=(150, 108), aim=False)
-    return img
-
-
-def shop_scene():
-    img = scene(0, BOARD_VALUES, aim=False)
-    shade_all(img, 0.25)
-    draw_panel(img, 1, 28, 18)
-    center(img, 2, "SHOP", FONT_PAL[6])
-    center(img, 3, "COINS 7   ITEMS 4/5", FONT_PAL[6])
-    for s, (it, name, price) in enumerate(((0, "SPRINGS", 6), (4, "DOUBLER", 5), (10, "HEART", 7))):
-        row = 5 + s * 3
-        blit(img, icon_sprite(*ICONS[it]), 24, 36 + s * 24, ICON_BLIT_PAL)
-        if s == 1:
-            text(img, 2, row, ">", FONT_PAL[6])
-        text(img, 6, row, name, FONT_PAL[6] if s == 1 else (255, 255, 255))
-        text(img, 18, row, f"{price} COINS", (255, 255, 255) if price <= 7 else FONT_PAL[8])
-    text(img, 6, 14, "NEXT ROUND")
-    center(img, 16, "FIRST PEG POPPED:")
-    center(img, 17, "DOUBLE A RANDOM PEG", FONT_PAL[6])
-    return img
-
-
-def boss_intro_scene():
-    vals = [2, 4, 2, 8, 4, 16, 4, 2, 8, 4, 8, 2, 4, 8, 16, 4, 2, 8, 4, 2, 4]
-    img = scene(0, vals, round_="10", goal="87", score="0", coins="6", items=(1, 2, 6), perks=(3,),
-                shop_in="1", boss=True, aim=False)
-    for k in range(10):                      # wind streaks
-        x = (k * 53 + 40) % 160
-        blit(img, [[0] * 8, [0] * 8, [0] * 8, [0, 5, 5, 5, 6, 6, 6, 0], [0, 0, 5, 5, 5, 5, 0, 0]],
-             BOARD_L + x - 4, 24 + k * 13, FX_PAL)
-    shade_all(img, 1 - 9 / 16)
-    draw_panel(img, 4, 24, 12)
-    center(img, 5, "BOSS ROUND!", FONT_PAL[6])
-    center(img, 7, "WIND TUNNEL", FONT_PAL[6])
-    center(img, 9, "GUSTS PUSH NUBBY")
-    center(img, 10, "LEFT AND RIGHT")
-    center(img, 12, "WIN FOR +3 COINS")
-    center(img, 14, "PRESS A")
-    return img
-
-
-def inventory_scene():
-    img = scene(1, BOARD_VALUES, items=(3, 5, 7, 8), perks=(0, 2), aim=False)
-    shade_all(img, 0.25)
-    draw_panel(img, 2, 28, 16)
-    center(img, 3, "ITEMS AND PERKS", FONT_PAL[6])
-    center(img, 4, "ITEM 2 OF 4")
-    owned = [("i", 3), ("i", 5), ("i", 7), ("i", 8), ("p", 0), ("p", 2)]
-    x = 120 - len(owned) * 9
-    lit_pal = [ICON_PAL[0]] + [mix(c, (255, 255, 255), 0.55) for c in ICON_PAL[1:]]
-    for k, (kind, n) in enumerate(owned):
-        spr = icon_sprite(*ICONS[n]) if kind == "i" else icon_sprite(*PERK_ICONS[n], True)
-        blit(img, spr, x + k * 18, 44 if k == 1 else 48, lit_pal if k == 1 else ICON_BLIT_PAL)
-    center(img, 9, "RICOCHET", FONT_PAL[6])
-    center(img, 11, "WALL BOUNCE:")
-    center(img, 12, "POP A RANDOM PEG")
-    center(img, 15, "LEFT AND RIGHT TO BROWSE")
-    center(img, 16, "B TO GO BACK")
-    return img
-
-
-def save_scaled(name, img, k):
+def ds_preview(name, top, bottom, k=2):
+    gap = [[(12, 12, 16)] * W for _ in range(12)]
+    rows = top + gap + bottom
     write_png(os.path.join(ROOT, "build", name),
-              [[img[y // k][x // k] for x in range(W * k)] for y in range(H * k)])
+              [[rows[y // k][x // k] for x in range(W * k)] for y in range(len(rows) * k)])
 
 
 os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
-title_rgb = to_rgb(title_pal, title_idx)
-text(title_rgb, 9, 13, "PRESS START")
-for x in range(8, 232):                 # the best-score strip drawn in game
-    for y in range(136, 160):
-        title_rgb[y][x] = FONT_PAL[3] if 8 < x < 231 and 136 < y < 159 else FONT_PAL[4]
-text(title_rgb, 3, 18, "BEST ROUND 3  LAUNCH 347", FONT_PAL[6])
-save_scaled("preview_title.png", title_rgb, 3)
-for n, t in enumerate(BOARD_THEMES):
-    save_scaled(f"preview_board_{t['name']}.png", board_preview(n), 2)
-for name, fn in (("laser", laser_scene), ("armor", armor_scene), ("shop", shop_scene),
-                 ("boss_intro", boss_intro_scene), ("inventory", inventory_scene)):
-    save_scaled(f"preview_{name}.png", fn(), 2)
-print("sprite tiles:", len(obj_tiles) // 8, " font tiles:", len(font_tiles) // 8)
+ds_preview("preview_title.png", rgb_of(BITMAPS["title_top"]), rgb_of(BITMAPS["title_bottom"]))
+for i, t in enumerate(BOARD_THEMES):
+    ds_preview(f"preview_board_{t['name']}.png", rgb_of(BITMAPS["dashboard"]), rgb_of(BITMAPS[f"board{i}"]))
+sheet = [[(0, 0, 0)] * 64 for _ in range(64)]
+print("sprite tiles:", TILE_FREE, "+ runtime", 33 * PEG_TILES + NUM_POPUPS * POPUP_TILES,
+      " font tiles:", len(font_tiles) // 8)

@@ -6,24 +6,35 @@
 
 #define FONT_CHARS " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ:!->+=.\',%/"
 #define FONT_NCHARS 48
-#define FRAME_TILE 240
+#define FRAME_TILE 288
+#define BAR_TILE(n, gold) (296 + (gold) * 9 + (n))   // progress bar, n of 8 pixels full
+#define BIGDIGIT_TILE(d) (314 + (d) * 4)        // 16x16 digit: TL, TR, BL, BR
 #define NUM_BOARDS 3
-#define BG_FIRST_COLOR 32
-#define BG_IMG_WORDS 9600
 
-// sprite tiles and palette banks
+// sprite tiles (32-byte units) and palette banks
 #define TILE_NUBBY 0
-#define TILE_NUBBY_BLINK 1
-#define TILE_NUBBY_BIG 2
-#define TILE_NUBBY_BIG_BLINK 6
-#define TILE_PEG 10           // 16x16 disc template (4 tiles)
-#define TILE_DOT 14
-#define TILE_ICON(i) (18 + (i) * 4)
-#define TILE_PERK(i) (62 + (i) * 4)
-#define TILE_LASER_WARN 15
-#define TILE_LASER 16
-#define TILE_WIND 17
-#define TILE_FREE 94        // first unused sprite tile
+#define TILE_NUBBY_BLINK 4
+#define TILE_NUBBY_BIG 8
+#define TILE_NUBBY_BIG_BLINK 12
+#define TILE_PEG 16           // 32x32 disc template
+#define TILE_DOT 32
+#define TILE_SPARK 36
+#define TILE_LASER_WARN 40  // 32x8
+#define TILE_LASER 44        // 32x8
+#define TILE_WIND 48          // 16x8
+#define TILE_PAUSE 52
+#define TILE_ICON(i) (56 + (i) * 4)
+#define TILE_PERK(i) (100 + (i) * 4)
+#define TILE_BIGICON(i) (132 + (i) * 16)
+#define TILE_BIGPERK(i) (308 + (i) * 16)
+#define TILE_FACE(f) (436 + (f) * 64)   // 64x64: happy, blink, wow, worry
+#define TILE_HEART 692
+#define TILE_HEART_EMPTY 696
+#define TILE_COIN 700
+#define TILE_FREE 704        // first unused sprite tile
+#define PEG_TILES 16
+#define POPUP_TILES 8
+#define NUM_POPUPS 6
 #define PAL_NUBBY 0
 #define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
 #define NUM_TIERS 9
@@ -32,14 +43,12 @@
 #define PAL_ICON_FLASH 12
 #define PAL_ARMOR 13
 #define PAL_FX 14
+#define PAL_UI 15
 
 extern const uint16_t font_pal[16];
-extern const uint16_t obj_pal[240];
-extern const uint16_t title_pal[256];
-extern const uint32_t title_tiles[BG_IMG_WORDS];
-extern const uint16_t *const board_pal[NUM_BOARDS];
-extern const uint32_t *const board_tiles[NUM_BOARDS];
-extern const uint32_t obj_tiles[752];
-extern const uint32_t font_tiles[1984];
+extern const uint16_t obj_pal[256];
+extern const uint32_t obj_tiles[5632];
+extern const uint32_t font_tiles[2832];
+extern const uint8_t glyphs5x7[10][7];                // digit bitmaps, bit 4 = left column
 
 #endif

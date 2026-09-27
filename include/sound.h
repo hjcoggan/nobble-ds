@@ -1,8 +1,4 @@
-// Music and sound effects on the GBA's PSG (Game Boy compatible) channels.
-//   ch1 square  - sound effects
-//   ch2 square  - lead melody
-//   ch3 wave    - bass
-//   ch4 noise   - drums
+// Music and sound effects on the DS's 16 stereo sound channels.
 #ifndef SOUND_H
 #define SOUND_H
 
@@ -17,9 +13,9 @@ void music_resume(void);
 
 enum { SFX_POP, SFX_POP_GONE };
 
-void sfx_peg(int hits, int kind);   // hits: pegs hit so far this launch
+void sfx_peg(int hits, int kind, int x);   // hits so far this launch; x pans it
 void sfx_spring(void);
-void sfx_wall(void);
+void sfx_wall(int x);
 void sfx_launch(void);
 void sfx_item(void);         // an item fired
 void sfx_move(void);

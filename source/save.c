@@ -1,13 +1,14 @@
+#include <fat.h>
+#include <stdio.h>
+#include <string.h>
 #include "save.h"
 
-#define SRAM ((volatile uint8_t *)0x0E000000)
+#define SAVE_PATH "fat:/nubby-ds.sav"
 #define SAVE_MAGIC 0x4255554Eu    // "NUUB"
 #define SAVE_VERSION 1
 
-// Emulators and flash carts look for this string to pick the save type.
-__attribute__((used, aligned(4))) const char save_type_tag[] = "SRAM_V113";
-
 SaveData save;
+int save_available;
 
 typedef struct {
     uint32_t magic;
@@ -25,37 +26,31 @@ static uint32_t checksum(const SaveBlock *b)
     return sum;
 }
 
-static void defaults(void)
-{
-    save.best_round = 0;
-    save.best_score = 0;
-}
-
 void save_load(void)
 {
-    // touch the tag so the linker can't discard it
-    volatile const char *tag = save_type_tag;
-    (void)tag[0];
-
+    memset(&save, 0, sizeof(save));
+    save_available = fatInitDefault();
+    if (!save_available) return;
     SaveBlock b;
-    uint8_t *p = (uint8_t *)&b;
-    // SRAM is on an 8-bit bus: byte reads only
-    for (unsigned i = 0; i < sizeof(b); i++) p[i] = SRAM[i];
-    if (b.magic != SAVE_MAGIC || b.version != SAVE_VERSION || b.checksum != checksum(&b)) {
-        defaults();
-        return;
-    }
-    save = b.data;
+    FILE *f = fopen(SAVE_PATH, "rb");
+    if (!f) return;
+    int ok = fread(&b, sizeof(b), 1, f) == 1;
+    fclose(f);
+    if (ok && b.magic == SAVE_MAGIC && b.version == SAVE_VERSION && b.checksum == checksum(&b))
+        save = b.data;
 }
 
 void save_write(void)
 {
+    if (!save_available) return;
     SaveBlock b;
-    const uint8_t *p = (const uint8_t *)&b;
-    for (unsigned i = 0; i < sizeof(b); i++) ((uint8_t *)&b)[i] = 0;
+    memset(&b, 0, sizeof(b));
     b.magic = SAVE_MAGIC;
     b.version = SAVE_VERSION;
     b.data = save;
     b.checksum = checksum(&b);
-    for (unsigned i = 0; i < sizeof(b); i++) SRAM[i] = p[i];
+    FILE *f = fopen(SAVE_PATH, "wb");
+    if (!f) return;
+    fwrite(&b, sizeof(b), 1, f);
+    fclose(f);
 }

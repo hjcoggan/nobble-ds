@@ -15,18 +15,19 @@
 
 #include <stdint.h>
 
-// board geometry, in pixels
-#define BOARD_L 40
-#define BOARD_R 200
-#define CEILING_Y 10
-#define LAUNCH_X 120
-#define LAUNCH_Y 18
-#define FLOOR_Y 156          // where SPRINGS bounces Nubby back up
-#define EXIT_Y 168           // Nubby is gone once it falls past this
-#define NUM_SLOTS 21
-#define PEG_R 7
-#define NUBBY_R 4
-#define BIG_NUBBY_R 6
+// board geometry, in pixels: the whole 256x192 bottom (touch) screen
+#define BOARD_L 10
+#define BOARD_R 246
+#define CEILING_Y 12
+#define LAUNCH_X 128
+#define LAUNCH_Y 22
+#define FLOOR_Y 180          // where SPRINGS bounces Nubby back up
+#define EXIT_Y 200           // Nubby is gone once it falls past this
+#define NUM_SLOTS 33         // six rows of 5 and 6 pegs
+#define CENTRE_SLOT 2        // top row, straight below the launcher
+#define PEG_R 9
+#define NUBBY_R 5
+#define BIG_NUBBY_R 7
 
 #define AIM_MAX 56           // aim angle limit either side of straight down (256 = full turn)
 #define START_LIVES 3
@@ -193,6 +194,10 @@ int game_refund(int item);              // coins back for an item swapped away
 int game_perk_due(const Game *g);       // a perk choice comes before this round
 void game_roll_perks(Game *g);
 void game_take_perk(Game *g, int choice);
+
+// The aim angle that points the launcher at screen position (x, y), clamped
+// to +/- AIM_MAX. Used for touch aiming.
+int game_aim_at(int x, int y);
 
 // Up to n points along the first part of a launch, for the aim guide.
 int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n);

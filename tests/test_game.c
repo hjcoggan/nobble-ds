@@ -55,17 +55,17 @@ static void test_popping(void)
     Game g;
     game_new_run(&g, 3);
     for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
-    g.pegs[5] = 8;                                   // top centre peg, right below the launcher
+    g.pegs[CENTRE_SLOT] = 8;                                   // top centre peg, right below the launcher
     Events ev;
     game_launch(&g, 0);
     while (!game_step(&g, &ev) && !ev.pop) {}
     CHECK(g.score == 8);
-    CHECK(g.pegs[5] == 4);
+    CHECK(g.pegs[CENTRE_SLOT] == 4);
 
-    g.pegs[5] = 1;
+    g.pegs[CENTRE_SLOT] = 1;
     game_launch(&g, 0);
     while (!game_step(&g, &ev) && !ev.pop) {}
-    CHECK(g.score == 1 && g.pegs[5] == 0 && ev.gone);
+    CHECK(g.score == 1 && g.pegs[CENTRE_SLOT] == 0 && ev.gone);
 }
 
 static void test_restock_and_merge(void)
@@ -92,7 +92,7 @@ static void test_restock_and_merge(void)
     for (int i = 0; i < NUM_SLOTS; i++) filled += g.pegs[i] != 0;
     CHECK(filled == NUM_SLOTS);
     for (int i = 0; i < NUM_SLOTS; i++) CHECK(g.pegs[i] == 2);
-    CHECK(g.quota == game_potential(&g) * 18 / 100);
+    CHECK(g.quota == game_potential(&g) * 175 / 1000);
 }
 
 static void test_failed_launch_resets(void)
@@ -203,7 +203,7 @@ static Game board_with(uint32_t seed, int item)
     for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
     g.pegs[0] = 1;
     g.pegs[3] = 8;
-    g.pegs[5] = 2;                               // below the launcher
+    g.pegs[CENTRE_SLOT] = 2;                               // below the launcher
     if (item >= 0) g.items[g.nitems++] = (uint8_t)item;
     return g;
 }
@@ -327,11 +327,11 @@ static void test_bosses(void)
     // armour: the first hit cracks it and scores nothing
     game_new_run(&g, 22);
     for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
-    g.pegs[5] = 4;
-    g.armor[5] = 1;
+    g.pegs[CENTRE_SLOT] = 4;
+    g.armor[CENTRE_SLOT] = 1;
     game_launch(&g, 0);
     while (!game_step(&g, &ev) && !ev.armor) {}
-    CHECK(g.armor[5] == 0 && g.pegs[5] == 4 && g.score == 0);
+    CHECK(g.armor[CENTRE_SLOT] == 0 && g.pegs[CENTRE_SLOT] == 4 && g.score == 0);
 
     // wind drifts a straight-down launch sideways
     game_new_run(&g, 23);
@@ -362,6 +362,17 @@ static void test_bosses(void)
     CHECK(tried > 0 && beaten > 0);
 }
 
+static void test_aim_at(void)
+{
+    CHECK(game_aim_at(LAUNCH_X, 150) == 0);                     // straight down
+    CHECK(game_aim_at(LAUNCH_X - 60, 150) < 0);                 // left is negative
+    CHECK(game_aim_at(LAUNCH_X + 60, 150) > 0);
+    CHECK(game_aim_at(LAUNCH_X + 100, LAUNCH_Y + 1) == AIM_MAX); // clamped
+    CHECK(game_aim_at(0, 0) == -AIM_MAX);
+    int a = game_aim_at(LAUNCH_X + 50, LAUNCH_Y + 50);          // 45 degrees = 32 units
+    CHECK(a >= 31 && a <= 33);
+}
+
 static void test_predict(void)
 {
     Game g;
@@ -385,6 +396,7 @@ int main(void)
     test_perks();
     test_everything_terminates();
     test_bosses();
+    test_aim_at();
     test_predict();
     if (failures) {
         printf("%d failure(s)\n", failures);

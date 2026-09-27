@@ -1,19 +1,28 @@
-# Nubby GBA
+# Nubby DS
 
-![Nubby GBA title screen](docs/title-screen.png)
+![Nubby DS title screen: the logo on the top screen, the menu on the touch screen](docs/title-screen.png)
 
-A number-popping roguelike for the Game Boy Advance, loosely inspired by
-*Nubby's Number Factory*. Aim Nubby from the launcher, bounce it off the walls
-and pop the numbered pegs to hit each round's quota in a single launch.
+A number-popping roguelike for the Nintendo DS, loosely inspired by
+*Nubby's Number Factory*. Drag on the touch screen to aim Nubby, let go to
+launch it, bounce it off the walls and pop the numbered pegs to hit each
+round's quota in a single launch.
 
-| | |
-| :---: | :---: |
-| ![Aiming a launch](docs/board.png) | ![The shop](docs/shop.png) |
-| Aim with the dotted guide | Spend coins in the shop |
-| ![Laser Grid boss](docs/laser.png) | ![Armour Plating boss](docs/armor.png) |
-| Laser Grid boss wipes out a row | Armour Plating boss: steel pegs take a hit first |
-| ![Wind Tunnel boss intro](docs/boss-intro.png) | ![Items and perks from the pause menu](docs/inventory.png) |
-| Every 5th round is a boss round | Check your items and perks from the pause menu |
+This is the DS version of [Nubby GBA](https://github.com/hjcoggan/nubby-gba),
+rebuilt to use the extra hardware:
+
+- **Two screens.** The whole touch screen is the board, with 33 bigger pegs.
+  The top screen is a dashboard: a big score counter with a bar filling towards
+  the goal, lives, coins, your items and perks, and a Nubby face that reacts to
+  what's happening.
+- **Touch controls.** Drag to aim with a live guide line, let go to launch.
+  The shop, perk choices and menus are all tap-to-pick. The d-pad and buttons
+  still work everywhere.
+- **Full-colour art.** Both screens use 32,768-colour pictures instead of
+  256-colour tiles, with bigger sprites, pop sparks, floating score numbers and
+  screen shake.
+- **Stereo sound.** The music uses more channels, with a panned echo on the
+  melody, a sampled bass and a punchier kick. Peg pops are panned to where the
+  peg is.
 
 > **Made with AI:** this game was built with [Claude](https://claude.ai), Anthropic's
 > AI model, using Claude Code. The code, artwork, music and documentation were
@@ -22,8 +31,9 @@ and pop the numbered pegs to hit each round's quota in a single launch.
 
 ## How to play
 
-- Aim the launcher at the top with **Left / Right** (L / R nudge one step) and
-  press **A** to launch Nubby. The dotted line shows where it will go.
+- **Touch and drag** anywhere on the board to aim the launcher, then **let go**
+  to launch Nubby. The dotted line shows where it will go. (Or aim with
+  **Left / Right**, nudge with **L / R** and launch with **A**.)
 - Pegs hold powers of two. When Nubby hits a peg it **scores the peg's number
   and halves it**: 8 becomes 4, then 2, then 1, and a 1 pops and vanishes.
   Nubby bounces off pegs and the side walls until it falls into the shredder.
@@ -79,24 +89,27 @@ and pop the numbered pegs to hit each round's quota in a single launch.
 - The music changes every 5 rounds (Factory Funk, Assembly Line, Overtime,
   Meltdown), and boss rounds have their own theme.
 
-Press **Start** to pause. **Items and perks** in the pause menu lets you flick
-through everything you own (left and right) to check what each one does.
+Tap the pause button in the top-right corner (or press **Start**) to pause.
+**Items and perks** in the pause menu shows everything you own; touch one to
+read about it on the top screen.
 
-Your furthest round and best single launch are saved to cartridge SRAM (a
-`.sav` file in emulators).
+Your furthest round and best single launch are saved to `nubby-ds.sav` on the
+SD card. That works on flash carts, and in melonDS with DLDI turned on
+(Config → Emu settings → DLDI). Without an SD card the game still runs but
+can't remember scores.
 
 ## Building from source
 
-You need [devkitPro](https://devkitpro.org)'s GBA toolchain, `make` and `git`.
+You need [devkitPro](https://devkitpro.org)'s DS toolchain (devkitARM and libnds), `make` and `git`.
 Python 3 is only needed if you change the artwork (`make assets`).
 
 ### macOS
 
 1. Download and run the devkitPro pacman installer (`.pkg`) from
-   <https://github.com/devkitPro/pacman/releases>, then install the GBA tools:
+   <https://github.com/devkitPro/pacman/releases>, then install the DS tools:
 
    ```bash
-   sudo dkp-pacman -S gba-dev
+   sudo dkp-pacman -S nds-dev
    ```
 
 2. Add the toolchain to your shell (append to `~/.zshrc`, then `source ~/.zshrc`):
@@ -107,37 +120,39 @@ Python 3 is only needed if you change the artwork (`make assets`).
    export PATH=$DEVKITPRO/tools/bin:$DEVKITARM/bin:$PATH
    ```
 
-3. Install mGBA: `brew install --cask mgba`
+3. Install melonDS from <https://melonds.kuribo64.net> (drag it into
+   Applications; the first time, allow it under System Settings → Privacy &
+   Security → Open Anyway).
 
 4. Build and run:
 
    ```bash
-   git clone https://github.com/hjcoggan/nubby-gba.git ~/nubby-gba
-   cd ~/nubby-gba
+   git clone https://github.com/hjcoggan/nubby-ds.git ~/nubby-ds
+   cd ~/nubby-ds
    make
-   open -a mGBA nubby-gba.gba
+   open -a melonDS nubby-ds.nds
    ```
 
 ### Windows
 
 1. Download the graphical installer (`devkitProUpdater`) from
    <https://github.com/devkitPro/installer/releases> and run it. When it asks
-   which components to install, tick **GBA Development**. It installs to
+   which components to install, tick **NDS Development**. It installs to
    `C:\devkitPro` and sets the `DEVKITPRO`/`DEVKITARM` variables for you.
 
 2. Open **MSYS2** from the devkitPro folder in the Start menu (a bash shell that
    comes with devkitPro, with `make` and `git`) and build:
 
    ```bash
-   git clone https://github.com/hjcoggan/nubby-gba.git
-   cd nubby-gba
+   git clone https://github.com/hjcoggan/nubby-ds.git
+   cd nubby-ds
    make
    ```
 
    If `git` is missing, install it with `pacman -S git`.
 
-3. Install mGBA from <https://mgba.io/downloads.html> and open `nubby-gba.gba`
-   with it (or drag the file onto the mGBA window).
+3. Install melonDS from <https://melonds.kuribo64.net> and open `nubby-ds.nds`
+   with it (or drag the file onto the melonDS window).
 
 ### Linux
 
@@ -152,26 +167,26 @@ Python 3 is only needed if you change the artwork (`make assets`).
    On Arch and other distros, follow
    <https://devkitpro.org/wiki/devkitPro_pacman>.
 
-2. Install the GBA tools, then log out and back in (or run
+2. Install the DS tools, then log out and back in (or run
    `source /etc/profile.d/devkit-env.sh`) so the environment variables are set:
 
    ```bash
-   sudo dkp-pacman -S gba-dev
+   sudo dkp-pacman -S nds-dev
    ```
 
-   On Arch-based systems the command is `sudo pacman -S gba-dev` after adding
+   On Arch-based systems the command is `sudo pacman -S nds-dev` after adding
    the devkitPro repositories.
 
-3. Install mGBA: `sudo apt install mgba-qt`, or from Flathub with
-   `flatpak install flathub io.mgba.mGBA`.
+3. Install melonDS from Flathub with `flatpak install flathub net.kuribo64.melonDS`,
+   or from <https://melonds.kuribo64.net>.
 
 4. Build and run:
 
    ```bash
-   git clone https://github.com/hjcoggan/nubby-gba.git
-   cd nubby-gba
+   git clone https://github.com/hjcoggan/nubby-ds.git
+   cd nubby-ds
    make
-   mgba-qt nubby-gba.gba
+   flatpak run net.kuribo64.melonDS nubby-ds.nds
    ```
 
 ### Tests
@@ -185,19 +200,20 @@ make test
 ## Project layout
 
 ```
-source/main.c     Screens, input, HUD, numbered peg sprites, shop, menus, credits
-source/game.c     Launch physics, popping pegs, quotas, restocks, items, perks, shop
-source/sound.c    Music and sound effects on the GBA's PSG channels
-source/ui.c       Text, panels and menus
-source/save.c     Best round and score in SRAM
-source/assets.c   Generated: palettes, background images, sprites, font
-tools/gen_assets.py  Draws all artwork and writes assets.c/assets.h plus
+source/main.c     Game states, touch input, the dashboard, board sprites, shop, menus
+source/game.c     Launch physics, popping pegs, quotas, restocks, items, perks, bosses
+source/gfx.c      Both screens: full-colour pictures, text layers, panels, sprites, fades
+source/sound.c    Music and sound effects on the DS's 16 sound channels
+source/save.c     Best round and score in a file on the SD card
+source/assets.c   Generated: palettes, sprite tiles, font
+data/*.bin        Generated: the full-colour 256x192 screen pictures
+tools/gen_assets.py  Draws all artwork and writes the files above, icon.bmp and
                      build/preview_*.png
 tests/            Host-side tests for the game logic
 ```
 
-No libraries are needed beyond devkitARM. After editing the artwork in
-`tools/gen_assets.py`, run `make assets`.
+The game uses libnds and libfat from devkitPro's `nds-dev`. After editing the
+artwork in `tools/gen_assets.py`, run `make assets`.
 
 ## AI disclosure
 
