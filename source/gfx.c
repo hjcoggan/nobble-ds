@@ -4,13 +4,16 @@
 // Per screen VRAM (bank A bottom, bank C top), both laid out the same:
 //   0KB   font tiles
 //   28KB  text map (32x32)
+//   30KB  "half" text map: the same font, shifted 4 pixels right, so text
+//         with an odd number of letters can be centred exactly
 //   32KB  the 256x192 picture, 16 bits per pixel
 #define MAP_BASE 14         // 2KB units
+#define HALF_MAP_BASE 15
 #define BMP_BASE 2          // 16KB units
 #define FONT_PAL_BANK 1
 
-static int bg_text[2], bg_pic[2];
-static uint16_t *text_map[2];
+static int bg_text[2], bg_half[2], bg_pic[2];
+static uint16_t *text_map[2], *half_map[2];
 static uint16_t *pic[2];
 
 void gfx_init(void)
@@ -29,10 +32,15 @@ void gfx_init(void)
     bg_text[BOT] = bgInit(0, BgType_Text4bpp, BgSize_T_256x256, MAP_BASE, 0);
     bg_pic[TOP] = bgInitSub(3, BgType_Bmp16, BgSize_B16_256x256, BMP_BASE, 0);
     bg_text[TOP] = bgInitSub(0, BgType_Text4bpp, BgSize_T_256x256, MAP_BASE, 0);
+    bg_half[BOT] = bgInit(1, BgType_Text4bpp, BgSize_T_256x256, HALF_MAP_BASE, 0);
+    bg_half[TOP] = bgInitSub(1, BgType_Text4bpp, BgSize_T_256x256, HALF_MAP_BASE, 0);
     for (int s = 0; s < 2; s++) {
         bgSetPriority(bg_pic[s], 3);
-        bgSetPriority(bg_text[s], 0);
+        bgSetPriority(bg_text[s], 1);        // sprites at priority 2 sit under the text
+        bgSetPriority(bg_half[s], 0);
         text_map[s] = bgGetMapPtr(bg_text[s]);
+        half_map[s] = bgGetMapPtr(bg_half[s]);
+        bgSetScroll(bg_half[s], -4, 0);
         pic[s] = bgGetGfxPtr(bg_pic[s]);
         dmaCopy(font_tiles, bgGetGfxPtr(bg_text[s]), sizeof(font_tiles));
         text_clear(s);
@@ -65,9 +73,14 @@ void text_fill(int scr, int x, int y, int w, int h, int tile)
             if (i >= 0 && i < 32) text_map[scr][(j & 31) * 32 + i] = cell(tile);
 }
 
-void text_clear(int scr) { text_fill(scr, 0, 0, 32, 32, 0); }
+void text_clear_rows(int scr, int y0, int y1)
+{
+    text_fill(scr, 0, y0, 32, y1 - y0, 0);
+    for (int j = y0; j < y1; j++)
+        for (int i = 0; i < 32; i++) half_map[scr][(j & 31) * 32 + i] = cell(0);
+}
 
-void text_clear_rows(int scr, int y0, int y1) { text_fill(scr, 0, y0, 32, y1 - y0, 0); }
+void text_clear(int scr) { text_clear_rows(scr, 0, 32); }
 
 static int glyph(char ch)
 {
@@ -76,11 +89,13 @@ static int glyph(char ch)
     return 0;
 }
 
-void text_style(int scr, int x, int y, const char *s, int style)
+static void put_text(uint16_t *map, int x, int y, const char *s, int style)
 {
     for (; *s; s++, x++)
-        if (x >= 0 && x < 32) text_map[scr][(y & 31) * 32 + x] = cell(style * FONT_NCHARS + glyph(*s));
+        if (x >= 0 && x < 32) map[(y & 31) * 32 + x] = cell(style * FONT_NCHARS + glyph(*s));
 }
+
+void text_style(int scr, int x, int y, const char *s, int style) { put_text(text_map[scr], x, y, s, style); }
 
 static int len(const char *s)
 {
@@ -89,9 +104,13 @@ static int len(const char *s)
     return n;
 }
 
+// Centre on the pixel column x*8 + w*4, using the half layer when the text
+// would otherwise land half a letter off.
 void text_center_in(int scr, int x, int w, int y, const char *s, int style)
 {
-    text_style(scr, x + (w - len(s)) / 2, y, s, style);
+    int start = x * 8 + w * 4 - len(s) * 4;
+    if (start & 4) put_text(half_map[scr], (start - 4) / 8, y, s, style);
+    else put_text(text_map[scr], start / 8, y, s, style);
 }
 
 void text_center(int scr, int y, const char *s, int style) { text_center_in(scr, 0, 32, y, s, style); }
@@ -160,7 +179,7 @@ void progress_bar(int scr, int x, int y, int tiles, int num, int den, int gold)
     }
 }
 
-void panel(int scr, int x, int y, int w, int h)
+static void panel_on(uint16_t *map, int x, int y, int w, int h)
 {
     int fill = TXT_PANEL * FONT_NCHARS;          // blank char on a panel
     for (int j = 0; j < h; j++) {
@@ -171,14 +190,32 @@ void panel(int scr, int x, int y, int w, int h)
             else if (bot) t = FRAME_TILE + (left ? 5 : right ? 7 : 6);
             else if (left) t = FRAME_TILE + 3;
             else if (right) t = FRAME_TILE + 4;
-            text_map[scr][((y + j) & 31) * 32 + x + i] = cell(t);
+            map[((y + j) & 31) * 32 + x + i] = cell(t);
         }
     }
 }
 
+void panel(int scr, int x, int y, int w, int h) { panel_on(text_map[scr], x, y, w, h); }
+
+// A button centred across the screen. Its width grows by one if needed so the
+// label sits exactly in the middle; odd widths go on the half layer.
+static int button_width(int w, const char *label) { return w + ((w - len(label)) & 1); }
+
+void button(int scr, int y, int w, int h, const char *label, int style)
+{
+    w = button_width(w, label);
+    if (w & 1) panel_on(half_map[scr], (31 - w) / 2, y, w, h);
+    else panel_on(text_map[scr], (32 - w) / 2, y, w, h);
+    text_center(scr, y + h / 2, label, style);
+}
+
+int button_left(int w, const char *label) { return 128 - button_width(w, label) * 4; }
+int button_px_width(int w, const char *label) { return button_width(w, label) * 8; }
+
 void text_scroll(int scr, int y)
 {
     bgSetScroll(bg_text[scr], 0, y);
+    bgSetScroll(bg_half[scr], -4, y);
     bgUpdate();
 }
 

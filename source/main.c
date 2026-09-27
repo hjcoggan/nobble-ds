@@ -105,23 +105,25 @@ static int tapped_in(int x, int y, int w, int h)    // pixels
 // ---------------------------------------------------------------- buttons
 
 typedef struct {
-    int x, y, w, h;         // tiles
+    int y, w, h;            // tiles; buttons are centred across the touch screen
     const char *label;
 } Button;
 
 static void draw_buttons(const Button *b, int n, int sel)
 {
-    for (int i = 0; i < n; i++) {
-        panel(BOT, b[i].x, b[i].y, b[i].w, b[i].h);
-        text_center_in(BOT, b[i].x, b[i].w, b[i].y + b[i].h / 2, b[i].label, i == sel ? TXT_HILITE : TXT_PANEL);
-    }
+    for (int i = 0; i < n; i++) button(BOT, b[i].y, b[i].w, b[i].h, b[i].label, i == sel ? TXT_HILITE : TXT_PANEL);
+}
+
+static int button_tapped(const Button *b)
+{
+    return tapped_in(button_left(b->w, b->label), b->y * 8, button_px_width(b->w, b->label), b->h * 8);
 }
 
 // The button tapped this frame, or chosen with the d-pad and A. -1 if none.
 static int buttons_update(const Button *b, int n, int *sel)
 {
     for (int i = 0; i < n; i++)
-        if (tapped_in(b[i].x * 8, b[i].y * 8, b[i].w * 8, b[i].h * 8)) {
+        if (button_tapped(&b[i])) {
             *sel = i;
             return i;
         }
@@ -416,18 +418,18 @@ static void hud_sprites(void)
     else f = FACE_HAPPY;
     if (f == FACE_HAPPY && frames % 200 < 8) f = FACE_BLINK;
     int bob = (frames / 12) % 4 == 3 ? 1 : 0;
-    spr(TOP, TOP_FACE, FACE_X, FACE_Y + bob, SpriteSize_64x64, TILE_FACE(f), PAL_UI, 1);
+    spr(TOP, TOP_FACE, FACE_X, FACE_Y + bob, SpriteSize_64x64, TILE_FACE(f), PAL_UI, 2);
 
     for (int h = 0; h < game.max_lives && h < 8; h++)
         spr(TOP, TOP_HEART + h, 80 + h * 14, 4, SpriteSize_16x16, h < game.lives ? TILE_HEART : TILE_HEART_EMPTY,
-            PAL_UI, 1);
-    spr(TOP, TOP_COIN, 200, 4, SpriteSize_16x16, TILE_COIN, PAL_UI, 1);
+            PAL_UI, 2);
+    spr(TOP, TOP_COIN, 200, 4, SpriteSize_16x16, TILE_COIN, PAL_UI, 2);
     for (int i = 0; i < game.nitems; i++)
         spr(TOP, TOP_ITEM + i, 10, 112 + i * 16, SpriteSize_16x16, TILE_ICON(game.items[i]),
-            (game.item_flash[i] & 4) ? PAL_ICON_FLASH : PAL_ICON, 1);
+            (game.item_flash[i] & 4) ? PAL_ICON_FLASH : PAL_ICON, 2);
     for (int i = 0; i < game.nperks; i++)
         spr(TOP, TOP_PERK + i, 130, 112 + i * 16, SpriteSize_16x16, TILE_PERK(game.perks[i]),
-            (game.perk_flash[i] & 4) ? PAL_ICON_FLASH : PAL_ICON, 1);
+            (game.perk_flash[i] & 4) ? PAL_ICON_FLASH : PAL_ICON, 2);
     if (detail_kind != DETAIL_NONE)
         spr(TOP, TOP_DETAIL, 16, 36, SpriteSize_32x32,
             detail_kind == DETAIL_ITEM ? TILE_BIGICON(detail_id) : TILE_BIGPERK(detail_id), PAL_ICON, 0);
@@ -446,16 +448,16 @@ static void board_sprites(void)
     if (flying || aiming) {
         int big = game_has(&game, ITEM_BIG);
         int t = big ? (blink ? TILE_NOBBLE_BIG_BLINK : TILE_NOBBLE_BIG) : (blink ? TILE_NOBBLE_BLINK : TILE_NOBBLE);
-        spr(BOT, OBJ_NOBBLE, nx - 8, ny - 8, SpriteSize_16x16, t, PAL_NOBBLE, 1);
+        spr(BOT, OBJ_NOBBLE, nx - 8, ny - 8, SpriteSize_16x16, t, PAL_NOBBLE, 2);
     }
     if (state == ST_AIM || state == ST_FLY)
-        spr(BOT, OBJ_PAUSE, 236, 1, SpriteSize_16x16, TILE_PAUSE, PAL_ICON, 1);
+        spr(BOT, OBJ_PAUSE, 236, 1, SpriteSize_16x16, TILE_PAUSE, PAL_ICON, 2);
 
     if (state == ST_AIM) {
         int16_t xs[AIM_DOTS], ys[AIM_DOTS];
         int n = game_predict(&game, aim, xs, ys, AIM_DOTS);
         for (int d = 0; d < n; d++)
-            spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NOBBLE, 1);
+            spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NOBBLE, 2);
     }
 
     for (int i = 0; i < game.nslots; i++) {
@@ -470,7 +472,7 @@ static void board_sprites(void)
             shown[i] = v;
         }
         int pal = game.flash[i] ? PAL_FLASH : game.armor[i] ? PAL_ARMOR : PAL_TIER(tier(v));
-        spr(BOT, OBJ_PEG + i, game.slot[i].x - 16, game.slot[i].y - 16, SpriteSize_32x32, PEG_TILE(i), pal, 1);
+        spr(BOT, OBJ_PEG + i, game.slot[i].x - 16, game.slot[i].y - 16, SpriteSize_32x32, PEG_TILE(i), pal, 2);
     }
 
     for (int k = 0; k < NUM_SPARKS; k++) {
@@ -480,14 +482,14 @@ static void board_sprites(void)
         s->x += s->vx;
         s->y += s->vy;
         s->vy += 40;
-        spr(BOT, OBJ_SPARK + k, (s->x >> 8) - 4, (s->y >> 8) - 4, SpriteSize_8x8, TILE_SPARK, s->pal, 1);
+        spr(BOT, OBJ_SPARK + k, (s->x >> 8) - 4, (s->y >> 8) - 4, SpriteSize_8x8, TILE_SPARK, s->pal, 2);
     }
     for (int k = 0; k < NUM_POPUPS; k++) {
         Popup *p = &popups[k];
         if (!p->life) continue;
         p->life--;
         if (p->life > 12 || (frames & 1))
-            spr(BOT, OBJ_POPUP + k, p->x, p->y - (40 - p->life) / 2, SpriteSize_32x16, POPUP_TILE(k), PAL_UI, 1);
+            spr(BOT, OBJ_POPUP + k, p->x, p->y - (40 - p->life) / 2, SpriteSize_32x16, POPUP_TILE(k), PAL_UI, 2);
     }
 
     // boss hazards: the laser locks onto a row, blinks a warning, then fires
@@ -496,7 +498,7 @@ static void board_sprites(void)
         if (!warn || (frames & 4))
             for (int k = 0; k < 8; k++)
                 spr(BOT, OBJ_FX + k, k * 32, game.laser_y - 4, SpriteSize_32x8,
-                    warn ? TILE_LASER_WARN : TILE_LASER, PAL_FX, warn ? 1 : 0);
+                    warn ? TILE_LASER_WARN : TILE_LASER, PAL_FX, warn ? 2 : 0);
     }
     if (game.boss == BOSS_WIND && (state == ST_AIM || state == ST_FLY || state == ST_BOSS)) {
         for (int k = 0; k < 10; k++) {
@@ -545,9 +547,9 @@ static void record_run(void)
 // ---------------------------------------------------------------- title, how to play, credits
 
 static const Button title_buttons[] = {
-    { 7, 4, 18, 4, "PLAY" }, { 7, 9, 18, 3, "HOW TO PLAY" }, { 7, 13, 18, 3, "CREDITS" },
+    { 3, 20, 5, "PLAY" }, { 9, 20, 3, "HOW TO PLAY" }, { 13, 20, 3, "CREDITS" },
 };
-static const Button back_button[] = { { 9, 19, 14, 3, "BACK" } };
+static const Button back_button[] = { { 19, 14, 3, "BACK" } };
 
 static void draw_title(void)
 {
@@ -829,7 +831,7 @@ static void finish_launch(void)
 
 // ---------------------------------------------------------------- shop
 
-static const Button next_button[] = { { 7, 19, 18, 3, "NEXT ROUND" } };
+static const Button next_button[] = { { 19, 18, 3, "NEXT ROUND" } };
 
 static void shop_detail(void)
 {
@@ -991,7 +993,7 @@ static void update_shop(void)
             }
             return;
         }
-    if (tapped_in(next_button[0].x * 8, next_button[0].y * 8, next_button[0].w * 8, next_button[0].h * 8)) {
+    if (button_tapped(&next_button[0])) {
         show_board();
         return;
     }
@@ -1074,7 +1076,7 @@ static void update_perks(void)
 // ---------------------------------------------------------------- pause and the items and perks screen
 
 static const Button pause_buttons[] = {
-    { 6, 5, 20, 3, "RESUME" }, { 6, 9, 20, 3, "ITEMS AND PERKS" }, { 6, 13, 20, 3, "QUIT" },
+    { 5, 20, 3, "RESUME" }, { 9, 20, 3, "ITEMS AND PERKS" }, { 13, 20, 3, "QUIT" },
 };
 
 static void draw_pause(void)

@@ -1,6 +1,6 @@
 # Nobble DS
 
-![Nobble DS title screen: the logo on the top screen, the menu on the touch screen](docs/title-screen.png)
+![Nobble DS title: the logo on the top screen, the menu on the touch screen](docs/title.png)
 
 A number-popping roguelike for the Nintendo DS, loosely inspired by
 *Nubby's Number Factory*. Drag on the touch screen to aim Nobble, let go to
@@ -23,6 +23,18 @@ rebuilt to use the extra hardware:
 - **Stereo sound.** The music uses more channels, with a panned echo on the
   melody, a sampled bass and a punchier kick. Peg pops are panned to where the
   peg is.
+
+
+| | |
+| :---: | :---: |
+| ![Aiming with the stylus](docs/aim.png) | ![A launch in full swing](docs/launch.png) |
+| Drag to aim: the guide shows the path, bounces and all | Pops throw sparks and scores; the goal bar fills and Nobble cheers |
+| ![The shop](docs/shop.png) | ![Items and perks from the pause menu](docs/inventory.png) |
+| Tap a card to read it on the top screen, again to buy | Every item and perk you own, one touch away |
+| ![Laser Grid boss](docs/laser.png) | ![Armour Plating boss](docs/armor.png) |
+| Laser Grid: the beam wipes out a band of pegs | Armour Plating: steel pegs need a hit before they score |
+| ![Wind Tunnel boss intro](docs/boss.png) | |
+| Every 5th round is a boss round | |
 
 > **Made with AI:** this game was built with [Claude](https://claude.ai), Anthropic's
 > AI model, using Claude Code. The code, artwork, music and documentation were

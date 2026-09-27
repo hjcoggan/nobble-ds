@@ -1,5 +1,7 @@
 // Both DS screens: a full-colour 256x192 picture (BG3), an 8x8 text layer on
-// top of it (BG0) and 128 sprites each. The bottom screen is the touch screen.
+// top of it (BG0, plus BG1 shifted half a letter for exact centring) and 128
+// sprites each. The bottom screen is the touch screen. Sprites at priority 2
+// sit under the text; priority 0 sprites go on top of it.
 #ifndef GFX_H
 #define GFX_H
 
@@ -32,6 +34,9 @@ void text_num(int scr, int x, int y, int v, int width, int style);   // right-al
 void big_number(int scr, int x, int y, int v, int digits);           // 16px digits, right-aligned
 void progress_bar(int scr, int x, int y, int tiles, int num, int den, int gold);
 void panel(int scr, int x, int y, int w, int h);
+void button(int scr, int y, int w, int h, const char *label, int style);   // centred on the screen
+int button_left(int w, const char *label);                                 // its pixel x and width
+int button_px_width(int w, const char *label);
 void text_scroll(int scr, int y);                   // vertical scroll of the text layer
 
 char *put_str(char *p, const char *s);

@@ -9,6 +9,7 @@ Run from the repo root:  python3 tools/gen_assets.py
 """
 import math
 import os
+import re
 import struct
 import zlib
 
@@ -1194,5 +1195,451 @@ ds_preview("preview_title.png", rgb_of(BITMAPS["title_top"]), rgb_of(BITMAPS["ti
 for i, t in enumerate(BOARD_THEMES):
     ds_preview(f"preview_board_{t['name']}.png", rgb_of(BITMAPS["dashboard"]), rgb_of(BITMAPS[f"board{i}"]))
 sheet = [[(0, 0, 0)] * 64 for _ in range(64)]
+
+
+# ================================================================ README screenshots
+# A small model of the DS display, drawing each scene the way source/main.c
+# does: the picture, then sprites (priority 1+), the text layer, then
+# priority-0 sprites. Names, rules and layouts are read from the C source.
+GAME_C = open(os.path.join(ROOT, "source", "game.c")).read()
+MAIN_C = open(os.path.join(ROOT, "source", "main.c")).read()
+ITEMS = [dict(name=m[0], effect=m[1], trig=m[2], price=int(m[3])) for m in re.findall(
+    r'\[ITEM_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*(TRIG_\w+),\s*(\d+)\s*\}', GAME_C)]
+PERKS = [dict(name=m[0], line1=m[1], line2=m[2]) for m in re.findall(
+    r'\[PERK_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\s*\}', GAME_C)]
+TRIGGERS = re.findall(r'\[(TRIG_\w+)\]\s*=\s*"([^"]*)"', GAME_C)
+TRIG_INDEX = {name: i for i, (name, _) in enumerate(TRIGGERS)}
+BOSSES = re.findall(r'\[BOSS_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"', GAME_C)
+LAYOUT_TABLE = {m[0]: [(int(x), int(y)) for x, y in re.findall(r'\{\s*(\d+),\s*(\d+)\s*\}', m[2])]
+                for m in re.findall(r'\{\s*"(\w+)",\s*(\d+),\s*\{(.*?)\}\s*\}', GAME_C, re.S)}
+
+
+def c_strings(name, src):
+    body = re.search(name + r'\[\w+\]\s*=\s*\{(.*?)\};', src, re.S).group(1)
+    return re.findall(r'"([^"]*)"', body)
+
+
+TRIGGER_SHORT = c_strings("trigger_short", MAIN_C)
+PERK_SHORT = c_strings("perk_short", MAIN_C)
+ITEM_ID = {it["name"]: i for i, it in enumerate(ITEMS)}
+PERK_ID = {pk["name"]: i for i, pk in enumerate(PERKS)}
+
+
+def unpack_tiles(words):
+    tiles = []
+    for t in range(len(words) // 8):
+        tiles.append([[(words[t * 8 + r] >> (4 * c)) & 15 for c in range(8)] for r in range(8)])
+    return tiles
+
+
+FONT_IMG = unpack_tiles(font_tiles)
+OBJ_IMG = unpack_tiles(obj_tiles)
+
+
+def rgb15_to_rgb(c):
+    return ((c & 31) << 3, ((c >> 5) & 31) << 3, ((c >> 10) & 31) << 3)
+
+
+FONT_RGB = [rgb15_to_rgb(c) for c in font_pal]
+OBJ_RGB = [rgb15_to_rgb(c) for c in obj_pal]
+PAL = dict(nobble=0, flash=1 + len(TIERS), icon=2 + len(TIERS), icon_flash=3 + len(TIERS),
+           armor=4 + len(TIERS), fx=5 + len(TIERS), ui=6 + len(TIERS))
+NCH = len(FONT_CHARS)
+FRAME = NCH * len(FONT_STYLES)
+PLAIN, PANEL_S, HILITE, GOLD_S, DIM_S, LCD_S = range(6)
+
+
+def sprite_img(tile, w, h):
+    tw = w // 8
+    return [[OBJ_IMG[tile + (y // 8) * tw + x // 8][y % 8][x % 8] for x in range(w)] for y in range(h)]
+
+
+def tier_of(v):
+    t = 0
+    while v > 1 and t < len(TIERS) - 1:
+        v >>= 1
+        t += 1
+    return t
+
+
+DIGITS3x5 = [0x7B6F, 0x2C97, 0x73E7, 0x73CF, 0x5BC9, 0x79CF, 0x79EF, 0x7252, 0x7BEF, 0x7BCF, 0x5D35]
+
+
+def peg_img(v):
+    """The same drawing as render_peg() in main.c."""
+    img = sprite_img(tile_of["peg"], 32, 32)
+    if v < 1000:
+        ds = [int(c) for c in str(v)]
+        x0 = 16 - (len(ds) * 6 - 1) // 2
+        for g, d in enumerate(ds):
+            for r, row in enumerate(GLYPHS[str(d)].split()):
+                for c, p in enumerate(row):
+                    if p == "#":
+                        img[13 + r][x0 + g * 6 + c] = 5
+    else:
+        ds = [int(c) for c in str(v // 1000 if v >= 10000 else v)] + ([10] if v >= 10000 else [])
+        x0 = 16 - (len(ds) * 4 - 1) // 2
+        for g, d in enumerate(ds):
+            for r in range(5):
+                for c in range(3):
+                    if DIGITS3x5[d] & (1 << (14 - r * 3 - c)):
+                        img[14 + r][x0 + g * 4 + c] = 5
+    return img
+
+
+def popup_img(v):
+    img = [[0] * 32 for _ in range(16)]
+    plus = [".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."]
+    glyphs = [plus] + [GLYPHS[c].split() for c in str(v)[:4]]
+    x0 = 16 - (len(glyphs) * 6 - 1) // 2
+    for pass_ in range(2):
+        for g, rows in enumerate(glyphs):
+            for r, row in enumerate(rows):
+                for c, p in enumerate(row):
+                    if p != "#":
+                        continue
+                    px, py = x0 + g * 6 + c, 4 + r
+                    if pass_ == 0:
+                        for oy in (-1, 0, 1):
+                            for ox in (-1, 0, 1):
+                                if 0 <= px + ox < 32 and 0 <= py + oy < 16:
+                                    img[py + oy][px + ox] = 6
+                    else:
+                        img[py][px] = 13 if r < 3 else 11
+    return img
+
+
+class Screen:
+    def __init__(self, picture):
+        self.pic = [list(row) for row in picture.px]
+        self.map = [[0] * 32 for _ in range(24)]
+        self.half = [[0] * 32 for _ in range(24)]      # BG1: shifted 4 pixels right
+        self.sprites = []
+        self.dim, self.dim_sprites = 0, False
+
+    def text(self, x, y, s, style=PLAIN, layer=None):
+        layer = self.map if layer is None else layer
+        for i, ch in enumerate(s):
+            if 0 <= x + i < 32:
+                layer[y][x + i] = style * NCH + FONT_CHARS.index(ch)
+
+    def center_in(self, x, w, y, s, style=PLAIN):
+        start = x * 8 + w * 4 - len(s) * 4
+        if start % 8:
+            self.text((start - 4) // 8, y, s, style, self.half)
+        else:
+            self.text(start // 8, y, s, style)
+
+    def center(self, y, s, style=PLAIN):
+        self.center_in(0, 32, y, s, style)
+
+    def num(self, x, y, v, width, style):
+        self.text(x + width - len(str(v)), y, str(v), style)
+
+    def big_number(self, x, y, v, digits):
+        ds = str(v)[-digits:]
+        for i, d in enumerate(ds):
+            cx = x + (digits - len(ds) + i) * 2
+            t = BIGDIGIT_TILE + int(d) * 4
+            self.map[y][cx], self.map[y][cx + 1] = t, t + 1
+            self.map[y + 1][cx], self.map[y + 1][cx + 1] = t + 2, t + 3
+
+    def bar(self, x, y, tiles, num, den, gold):
+        px = min(tiles * 8, num * tiles * 8 // den)
+        for i in range(tiles):
+            self.map[y][x + i] = BAR_TILE + gold * 9 + max(0, min(8, px - i * 8))
+
+    def button(self, y, w, h, label, style):
+        w += (w - len(label)) & 1
+        if w & 1:
+            self.panel((31 - w) // 2, y, w, h, self.half)
+        else:
+            self.panel((32 - w) // 2, y, w, h)
+        self.center(y + h // 2, label, style)
+
+    def panel(self, x, y, w, h, layer=None):
+        layer = self.map if layer is None else layer
+        for j in range(h):
+            for i in range(w):
+                top, bot, left, right = j == 0, j == h - 1, i == 0, i == w - 1
+                t = PANEL_S * NCH
+                if top:
+                    t = FRAME + (0 if left else 2 if right else 1)
+                elif bot:
+                    t = FRAME + (5 if left else 7 if right else 6)
+                elif left:
+                    t = FRAME + 3
+                elif right:
+                    t = FRAME + 4
+                layer[y + j][x + i] = t
+
+    def spr(self, x, y, img, pal, prio=1):
+        self.sprites.append((x, y, img, pal, prio))
+
+    def render(self):
+        k = 1 - self.dim / 16
+        out = [[scale(c, k) for c in row] for row in self.pic] if self.dim else [list(r) for r in self.pic]
+
+        def draw_sprites(want_zero):
+            for x, y, img, pal, prio in reversed(self.sprites):       # first added draws on top
+                if (prio == 0) != want_zero:
+                    continue
+                for yy, row in enumerate(img):
+                    for xx, v in enumerate(row):
+                        px, py = x + xx, y + yy
+                        if v and 0 <= px < W and 0 <= py < H:
+                            c = OBJ_RGB[pal * 16 + v]
+                            out[py][px] = scale(c, k) if self.dim and self.dim_sprites else c
+        draw_sprites(False)
+        for layer, shift in ((self.map, 0), (self.half, 4)):
+            for ty in range(24):
+                for tx in range(32):
+                    t = layer[ty][tx]
+                    if not t:
+                        continue
+                    for yy in range(8):
+                        for xx in range(8):
+                            v = FONT_IMG[t][yy][xx]
+                            px = tx * 8 + xx + shift
+                            if v and px < W:
+                                out[ty * 8 + yy][px] = FONT_RGB[v]
+        draw_sprites(True)
+        return out
+
+
+def icon(i):
+    return sprite_img(tile_of[f"icon{i}"], 16, 16)
+
+
+def perk_icon(i, big=False):
+    return sprite_img(tile_of[f"bigperk{i}" if big else f"perk{i}"], 32 if big else 16, 32 if big else 16)
+
+
+def dashboard(st):
+    """The top screen, as hud_text() and hud_sprites() draw it."""
+    sc = Screen(BITMAPS["dashboard"])
+    sc.text(1, 1, f"ROUND {st['round']}", GOLD_S if st.get("boss") else PLAIN)
+    sc.num(27, 1, st["coins"], 4, GOLD_S)
+    det = st.get("detail")
+    if det:
+        kind, name, hint = det
+        sc.panel(1, 3, 30, 8)
+        if kind == "item":
+            it = ITEMS[ITEM_ID[name]]
+            sc.text(7, 4, it["name"], HILITE)
+            sc.text(20, 4, f"{it['price']} COINS", PANEL_S if st["coins"] >= it["price"] else DIM_S)
+            sc.text(7, 6, TRIGGERS[TRIG_INDEX[it["trig"]]][1], PANEL_S)
+            sc.text(7, 7, it["effect"], HILITE)
+            sc.spr(16, 36, sprite_img(tile_of[f"bigicon{ITEM_ID[name]}"], 32, 32), PAL["icon"], 0)
+        else:
+            pk = PERKS[PERK_ID[name]]
+            sc.text(7, 4, pk["name"], HILITE)
+            sc.text(7, 6, pk["line1"], PANEL_S)
+            sc.text(7, 7, pk["line2"], HILITE)
+            sc.spr(16, 36, perk_icon(PERK_ID[name], True), PAL["icon"], 0)
+        sc.center_in(1, 30, 9, hint, PANEL_S)
+    else:
+        sc.text(2, 3, "SCORE", LCD_S)
+        sc.big_number(2, 4, st["score"], 8)
+        sc.text(2, 7, f"GOAL {st['goal']}", LCD_S)
+        met = st["score"] >= st["goal"]
+        sc.bar(2, 8, 18, st["score"], st["goal"], int(met))
+        if met:
+            sc.text(2, 9, f"RESTOCKS {min(9, st['score'] // st['goal'])}", GOLD_S)
+        elif st.get("flying"):
+            sc.text(2, 9, f"NEED {st['goal'] - st['score']} MORE", LCD_S)
+    if st.get("boss"):
+        sc.center(11, "BOSS: " + BOSSES[st["boss"]][0], GOLD_S)
+    else:
+        until = st.get("shop_in", 2)
+        sc.center(11, f"NEXT SHOP IN {until} ROUND" + ("" if until == 1 else "S"))
+    items, perks = st.get("items", []), st.get("perks", [])
+    sc.text(1, 13, "ITEMS FULL" if len(items) >= 5 else f"ITEMS {len(items)}/5", LCD_S)
+    for i, name in enumerate(items):
+        it = ITEMS[ITEM_ID[name]]
+        lit = name in st.get("flash", ())
+        sc.text(4, 14 + i * 2, it["name"], GOLD_S if lit else PLAIN)
+        sc.text(4, 15 + i * 2, TRIGGER_SHORT[TRIG_INDEX[it["trig"]]], LCD_S)
+        sc.spr(10, 112 + i * 16, icon(ITEM_ID[name]), PAL["icon_flash"] if lit else PAL["icon"])
+    sc.text(16, 13, "PERKS", LCD_S)
+    if not perks:
+        sc.text(16, 15, "ONE EVERY", LCD_S)
+        sc.text(16, 16, "5 ROUNDS", LCD_S)
+    for i, name in enumerate(perks):
+        sc.text(19, 14 + i * 2, name, PLAIN)
+        sc.text(19, 15 + i * 2, PERK_SHORT[PERK_ID[name]], LCD_S)
+        sc.spr(130, 112 + i * 16, perk_icon(PERK_ID[name]), PAL["icon"])
+    face = FACES.index(st.get("face", "happy"))
+    sc.spr(180, 24, sprite_img(tile_of["face_happy"] + face * 64, 64, 64), PAL["ui"])
+    for h in range(st.get("max_lives", 3)):
+        sc.spr(80 + h * 14, 4, sprite_img(tile_of["heart" if h < st["lives"] else "heart_empty"], 16, 16), PAL["ui"])
+    sc.spr(200, 4, sprite_img(tile_of["coin"], 16, 16), PAL["ui"])
+    return sc
+
+
+def predict(layout, pegs, angle, n=12):
+    """game_predict(): the aim guide, up to the first peg."""
+    x, y = 128 * 256, 22 * 256
+    vx = int(math.sin(angle * math.pi / 128) * 256) * 4
+    vy = int(math.cos(angle * math.pi / 128) * 256) * 4
+    pts = []
+    for f in range(1, 61):
+        for _ in range(2):
+            vy += 11
+            vx, vy = max(-1792, min(1792, vx)), max(-1792, min(1792, vy))
+            x += vx // 2
+            y += vy // 2
+            if x < (10 + 5) * 256 or x > (246 - 5) * 256:
+                vx = -vx
+            for (sx, sy), v in zip(layout, pegs):
+                if v and math.hypot(x / 256 - sx, y / 256 - sy) < 16:
+                    return pts
+        if f % 4 == 0 and len(pts) < n:
+            pts.append((x // 256, y // 256))
+    return pts
+
+
+def board(st):
+    """The bottom screen, as board_sprites() draws it."""
+    sc = Screen(BITMAPS[f"board{st.get('theme', 0)}"])
+    layout = LAYOUT_TABLE[st["layout"]]
+    pegs = st["pegs"]
+    for k, (px, py, v, pal) in enumerate(st.get("sparks", [])):
+        sc.spr(px - 4, py - 4, sprite_img(tile_of["spark"], 8, 8), 1 + tier_of(v) if pal is None else pal)
+    for (px, py, v) in st.get("popups", []):
+        sc.spr(px - 16, py - 20, popup_img(v), PAL["ui"])
+    if "nobble" in st:
+        nx, ny = st["nobble"]
+        sc.sprites.insert(0, (nx - 8, ny - 8, sprite_img(tile_of["nobble"], 16, 16), PAL["nobble"], 1))
+    elif st.get("aim") is not None:
+        sc.sprites.insert(0, (120, 14, sprite_img(tile_of["nobble"], 16, 16), PAL["nobble"], 1))
+        for (dx, dy) in predict(layout, pegs, st["aim"]):
+            sc.spr(dx - 4, dy - 4, sprite_img(tile_of["dot"], 8, 8), PAL["nobble"])
+    if st.get("pause", True):
+        sc.spr(236, 1, sprite_img(tile_of["pause"], 16, 16), PAL["icon"])
+    for i, ((sx, sy), v) in enumerate(zip(layout, pegs)):
+        if not v:
+            sc.spr(sx - 16, sy - 16, sprite_img(tile_of["socket"], 32, 32), PAL["armor"], 2)
+            continue
+        pal = PAL["flash"] if i in st.get("flash", ()) else PAL["armor"] if i in st.get("armor", ()) else 1 + tier_of(v)
+        sc.spr(sx - 16, sy - 16, peg_img(v), pal)
+    if st.get("laser") is not None:
+        for k in range(8):
+            sc.spr(k * 32, st["laser"] - 4, sprite_img(tile_of["laser"], 32, 8), PAL["fx"], 0)
+    if st.get("wind"):
+        for k in range(10):
+            x = (k * 67 + 40) % 236
+            sc.spr(10 + x - 8, 30 + k * 15, sprite_img(tile_of["wind"], 16, 8), PAL["fx"], 2)
+    return sc
+
+
+def buttons(sc, labels, sel=0):
+    for i, (y, w, h, label) in enumerate(labels):
+        sc.button(y, w, h, label, HILITE if i == sel else PANEL_S)
+
+
+def save_ds(name, top, bottom):
+    ds_preview(name, top.render(), bottom.render())
+
+
+# --- title: logo on top, menu on the touch screen
+top = Screen(BITMAPS["title_top"])
+bot = Screen(BITMAPS["title_bottom"])
+buttons(bot, [(3, 20, 5, "PLAY"), (9, 20, 3, "HOW TO PLAY"), (13, 20, 3, "CREDITS")])
+bot.panel(2, 18, 28, 3)
+bot.center(19, "BEST ROUND 17  LAUNCH 4096", HILITE)
+save_ds("shot_title.png", top, bot)
+
+# --- aiming on the Pyramid layout
+PYR = [16, 8, 4, 2, 32, 1, 4, 8, 0, 16, 2, 64, 4, 1, 8]
+st = dict(round=4, coins=7, lives=3, max_lives=3, score=0, goal=48, items=["ZAPPER", "RICOCHET", "ENCORE"],
+          perks=["CONVEYOR"], shop_in=3)
+save_ds("shot_aim.png", dashboard(st), board(dict(layout="PYRAMID", pegs=PYR, aim=-48)))
+
+# --- mid-launch: pops throw sparks and scores, the goal bar fills, Nobble cheers
+DIA = [32, 16, 64, 8, 32, 16, 128, 0, 64, 8, 32, 16, 256, 32, 16, 64]
+st = dict(round=9, coins=12, lives=3, max_lives=4, score=688, goal=412, flying=True, face="wow",
+          items=["SEEDER", "ZAPPER", "RICOCHET", "CHAIN", "HEART"], flash=("RICOCHET",),
+          perks=["BUMPER", "PAYDAY"], shop_in=1)
+sparks = [(106, 102, 64, None), (96, 94, 64, None), (116, 96, 64, None), (100, 112, 64, None), (114, 110, 64, None),
+          (60, 98, 16, None), (68, 108, 16, None)]
+save_ds("shot_launch.png", dashboard(st),
+        board(dict(layout="DIAMOND", pegs=DIA, theme=2, nobble=(118, 118), flash=(7,), sparks=sparks,
+                   popups=[(106, 96, 128), (62, 96, 32)])))
+
+# --- the shop: cards on the touch screen, details on top
+st = dict(round=7, coins=9, lives=3, max_lives=3, score=0, goal=1, items=["ZAPPER", "RICOCHET", "ENCORE"],
+          perks=["CONVEYOR", "IGNITION"], detail=("item", "DOUBLER", "TAP AGAIN TO BUY"))
+bot = Screen(BITMAPS["board0"])
+bot.dim = 12
+bot.center(1, "SHOP", GOLD_S)
+bot.center(2, "COINS 9   ITEMS 3/5", GOLD_S)
+for s_, (name, on) in enumerate((("SPRINGS", 0), ("DOUBLER", 1), ("HEART", 0))):
+    it = ITEMS[ITEM_ID[name]]
+    row = 4 + s_ * 5
+    bot.panel(1, row, 30, 5)
+    bot.text(7, row + 1, name, HILITE if on else PANEL_S)
+    bot.text(21, row + 1, f"{it['price']} COINS", PANEL_S)
+    bot.text(7, row + 3, TRIGGER_SHORT[TRIG_INDEX[it["trig"]]], DIM_S)
+    if on:
+        bot.text(2, row + 2, ">", HILITE)
+    bot.spr(16, row * 8 + 4, sprite_img(tile_of[f"bigicon{ITEM_ID[name]}"], 32, 32), PAL["icon"], 0)
+buttons(bot, [(19, 18, 3, "NEXT ROUND")], sel=-1)
+save_ds("shot_shop.png", dashboard(st), bot)
+
+# --- Laser Grid boss: the beam wipes out a band of pegs
+COP = [8, 16, 32, 16, 0, 0, 0, 0, 8, 32, 64, 8, 16, 4, 32, 16]     # the beam just wiped out row two
+st = dict(round=5, boss=1, coins=6, lives=2, max_lives=3, score=96, goal=204, flying=True, face="worry",
+          items=["PUMP", "ZAPPER", "SPRINGS"], perks=["GREMLIN"])
+save_ds("shot_laser.png", dashboard(st),
+        board(dict(layout="FUNNEL", pegs=COP, theme=1, nobble=(146, 104), laser=86,
+                   sparks=[(62, 84, 0, PAL["fx"]), (100, 86, 0, PAL["fx"]), (156, 86, 0, PAL["fx"]),
+                           (194, 84, 0, PAL["fx"]), (70, 90, 0, PAL["fx"])])))
+
+# --- Armour Plating boss: steel pegs need a hit before they score
+COL = [128, 64, 256, 64, 32, 512, 64, 128, 64, 128, 32, 256, 128, 64, 256, 64, 128, 32, 1024]
+st = dict(round=15, boss=3, coins=4, lives=2, max_lives=4, score=1216, goal=3740, flying=True,
+          items=["ZAPPER", "RICOCHET", "ENCORE", "CHAIN", "HEART"], perks=["CONVEYOR", "IGNITION", "JACKPOT"])
+save_ds("shot_armor.png", dashboard(st),
+        board(dict(layout="COLUMNS", pegs=COL, theme=2, nobble=(128, 120), armor=(2, 5, 11, 14, 18))))
+
+# --- the items and perks screen from the pause menu
+st = dict(round=12, coins=14, lives=3, max_lives=3, score=0, goal=1,
+          items=["SEEDER", "ZAPPER", "RICOCHET", "CHAIN"], perks=["CONVEYOR", "PAYDAY"],
+          detail=("perk", "PAYDAY", ""))
+bot = Screen(BITMAPS["board1"])
+bot.dim = 12
+bot.center(1, "ITEMS AND PERKS", GOLD_S)
+bot.center(2, "TOUCH ONE TO READ ABOUT IT", GOLD_S)
+bot.panel(1, 4, 30, 7)
+bot.text(3, 4, "ITEMS", HILITE)
+bot.panel(1, 11, 30, 7)
+bot.text(3, 11, "PERKS", HILITE)
+buttons(bot, [(19, 14, 3, "BACK")], sel=-1)
+owned = [("i", n) for n in st["items"]] + [("p", n) for n in st["perks"]]
+for k, (kind, name) in enumerate(owned):
+    row = 0 if kind == "i" else 1
+    col = k if row == 0 else k - len(st["items"])
+    x, y = 26 + col * 44, 108 if row else 52
+    sel = k == len(st["items"]) + 1
+    img = sprite_img(tile_of[f"bigicon{ITEM_ID[name]}"], 32, 32) if kind == "i" else perk_icon(PERK_ID[name], True)
+    bot.spr(x, y - (3 if sel else 0), img, PAL["icon_flash"] if sel else PAL["icon"], 0)
+save_ds("shot_inventory.png", dashboard(st), bot)
+
+# --- a boss intro
+st = dict(round=10, boss=2, coins=8, lives=3, max_lives=3, score=0, goal=486,
+          items=["SEEDER", "PUMP", "PIGGY"], perks=["RECYCLER", "BUMPER"])
+bot = board(dict(layout="RING", pegs=[32, 16, 64, 8, 32, 16, 128, 16, 32, 8, 256, 16, 32], theme=0, aim=0,
+                 wind=True, pause=False))
+bot.dim = 9
+bot.dim_sprites = True
+bot.panel(3, 5, 26, 13)
+bot.center(6, "BOSS ROUND!", HILITE)
+bot.center(8, BOSSES[2][0], HILITE)
+bot.center(10, BOSSES[2][1], PANEL_S)
+bot.center(11, BOSSES[2][2], PANEL_S)
+bot.center(13, "WIN FOR +3 COINS", PANEL_S)
+bot.center(15, "TOUCH TO START", HILITE)
+save_ds("shot_boss.png", dashboard(st), bot)
 print("sprite tiles:", TILE_FREE, "+ runtime", 20 * PEG_TILES + NUM_POPUPS * POPUP_TILES,
       " font tiles:", len(font_tiles) // 8)
