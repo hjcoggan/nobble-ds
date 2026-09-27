@@ -341,7 +341,7 @@ static void hud_text(void)
     text_num(TOP, 27, 1, game.coins, 4, TXT_GOLD);
 
     if (detail_kind != DETAIL_NONE) {
-        panel(TOP, 1, 3, 30, 8);
+        panel(TOP, 0, 2, 32, 9);                  // covers the score and face windows, frames and all
         if (detail_kind == DETAIL_ITEM) {
             const ItemInfo *it = &item_info[detail_id];
             text_style(TOP, 7, 4, it->name, TXT_HILITE);
@@ -356,7 +356,7 @@ static void hud_text(void)
             text_style(TOP, 7, 6, pk->line1, TXT_PANEL);
             text_style(TOP, 7, 7, pk->line2, TXT_HILITE);
         }
-        text_center_in(TOP, 1, 30, 9, detail_hint, TXT_PANEL);
+        text_center_in(TOP, 0, 32, 9, detail_hint, TXT_PANEL);
     } else {
         text_style(TOP, 2, 3, "SCORE", TXT_LCD);
         big_number(TOP, 2, 4, game.score, 8);

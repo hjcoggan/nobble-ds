@@ -1440,7 +1440,7 @@ def dashboard(st):
     det = st.get("detail")
     if det:
         kind, name, hint = det
-        sc.panel(1, 3, 30, 8)
+        sc.panel(0, 2, 32, 9)
         if kind == "item":
             it = ITEMS[ITEM_ID[name]]
             sc.text(7, 4, it["name"], HILITE)
@@ -1454,7 +1454,7 @@ def dashboard(st):
             sc.text(7, 6, pk["line1"], PANEL_S)
             sc.text(7, 7, pk["line2"], HILITE)
             sc.spr(16, 36, perk_icon(PERK_ID[name], True), PAL["icon"], 0)
-        sc.center_in(1, 30, 9, hint, PANEL_S)
+        sc.center_in(0, 32, 9, hint, PANEL_S)
     else:
         sc.text(2, 3, "SCORE", LCD_S)
         sc.big_number(2, 4, st["score"], 8)
