@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the Nubby DS assets:
+"""Generate the Nobble DS assets:
   data/*.bin            full-colour 256x192 backgrounds (RGB15 with the alpha bit)
   source/assets.c       palettes, sprite tiles and text-layer tiles
   include/assets.h
@@ -322,7 +322,7 @@ def write_png(path, rows):
 
 
 
-# ================================================================ Nubby artwork
+# ================================================================ Nobble artwork
 # must match include/game.h
 BOARD_L, BOARD_R = 10, 246
 LAUNCH_X, LAUNCH_Y = 128, 22
@@ -384,7 +384,7 @@ def pipe(cv, y0, x0, x1, base):
 
 
 def shredder(cv):
-    """The pit Nubby falls into at the bottom of the board."""
+    """The pit Nobble falls into at the bottom of the board."""
     for y in range(PIT_Y, H):
         for x in range(BOARD_L, BOARD_R):
             if y < PIT_Y + 2:
@@ -398,7 +398,7 @@ def shredder(cv):
 
 
 def launcher(cv, base):
-    """Nozzle hanging from the pipe that Nubby is fired from."""
+    """Nozzle hanging from the pipe that Nobble is fired from."""
     for y in range(6, 14):
         w = 7 if y < 11 else 6
         for x in range(LAUNCH_X - w, LAUNCH_X + w):
@@ -429,24 +429,27 @@ LOGO = {
     "U": ["##...##", "##...##", "##...##", "##...##", "##...##", "##...##", "#######", ".#####."],
     "B": ["######.", "##...##", "##...##", "######.", "##...##", "##...##", "##...##", "######."],
     "Y": ["##...##", "##...##", ".##.##.", "..###..", "...#...", "...#...", "..###..", "..###.."],
+    "O": [".#####.", "##...##", "##...##", "##...##", "##...##", "##...##", "##...##", ".#####."],
+    "L": ["##.....", "##.....", "##.....", "##.....", "##.....", "##.....", "#######", "#######"],
+    "E": ["#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######", "#######"],
 }
 SMALL_GLYPHS = {
     "G": [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####"],
     "B": ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."],
     "A": [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"],
 }
-NUBBY_BODY = [(120, 40, 110), (230, 110, 170), (255, 170, 210), (255, 240, 250)]
+NOBBLE_BODY = [(120, 40, 110), (230, 110, 170), (255, 170, 210), (255, 240, 250)]
 
 
-def draw_big_nubby(cv, cx, cy, r):
+def draw_big_nobble(cv, cx, cy, r):
     def body(x, y, d):
         dx, dy = x + 0.5 - cx, y + 0.5 - cy
         if d > r - 1.2:
-            return NUBBY_BODY[0]
+            return NOBBLE_BODY[0]
         lit = -(dx * LIGHT[0] + dy * LIGHT[1]) / r
-        c = mix(NUBBY_BODY[1], NUBBY_BODY[2], max(0, lit) * 0.9)
+        c = mix(NOBBLE_BODY[1], NOBBLE_BODY[2], max(0, lit) * 0.9)
         if math.hypot(dx + r * 0.4, dy + r * 0.45) < r * 0.18:
-            c = NUBBY_BODY[3]
+            c = NOBBLE_BODY[3]
         return scale(c, 0.8 + 0.2 * (1 - (dy / r + 1) / 2) + 0.1)
     disc(cv, cx + 3, cy + 4, r, lambda x, y, d: scale(cv.get(x, y), 0.5) if 0 <= x < W and 0 <= y < H else None)
     disc(cv, cx, cy, r, body)
@@ -530,7 +533,7 @@ def bubble_text(cv, m, depth, face_top, face_bot, gloss, side, outline):
 
 
 def glossy_ball(cv, cx, cy, r, col, label=None):
-    """A shiny numbered ball, like the ones bouncing around the Nubby's logo."""
+    """A shiny numbered ball, like the ones bouncing around the original game.s logo."""
     disc(cv, cx + r * 0.25, cy + r * 0.3, r, lambda x, y, d: scale(cv.get(x, y), 0.6)
          if 0 <= x < W and 0 <= y < H else None)
 
@@ -567,7 +570,7 @@ def glossy_ball(cv, cx, cy, r, col, label=None):
 
 
 # ---------------------------------------------------------------- sprites
-NUBBY_PAL = [(0, 0, 0), NUBBY_BODY[0], NUBBY_BODY[1], NUBBY_BODY[2], NUBBY_BODY[3], INK, (255, 255, 255),
+NOBBLE_PAL = [(0, 0, 0), NOBBLE_BODY[0], NOBBLE_BODY[1], NOBBLE_BODY[2], NOBBLE_BODY[3], INK, (255, 255, 255),
              (255, 120, 150)]
 # peg colours by value: 1, 2, 4, ... 256+ (index 5 is the number)
 TIERS = [(200, 204, 214), (110, 210, 110), (90, 200, 220), (90, 130, 240), (170, 100, 240),
@@ -599,14 +602,14 @@ ICONS = [   # items, in game.h order: (colour, 5x7 symbol)
     ("pink", "..... .#.#. ##### ##### .###. ..#.. ....."),          # heart
 ]
 PERK_ICONS = [   # perks, in game.h order
-    ("gold", GLYPHS["C"]),                                        # cheesy
-    ("purple", ".###. #...# ...#. ..#.. ..#.. ..... ..#.."),        # chaotic: ?
-    ("orange", GLYPHS["W"]),                                      # waffle
-    ("pink", GLYPHS["K"]),                                        # kebab
-    ("blue", GLYPHS["S"]),                                        # springy
-    ("gold", GLYPHS["T"]),                                        # trophy
-    ("gray", GLYPHS["B"]),                                        # buckshot
-    ("green", GLYPHS["H"]),                                       # house of cards
+    ("gold", GLYPHS["C"]),                                        # conveyor
+    ("purple", ".###. #...# ...#. ..#.. ..#.. ..... ..#.."),        # gremlin: ?
+    ("orange", GLYPHS["I"]),                                      # ignition
+    ("pink", GLYPHS["R"]),                                        # recycler
+    ("blue", GLYPHS["B"]),                                        # bumper
+    ("gold", GLYPHS["P"]),                                        # payday
+    ("gray", GLYPHS["J"]),                                        # jackpot
+    ("green", GLYPHS["D"]),                                       # domino
 ]
 
 
@@ -631,7 +634,7 @@ def peg_sprite(size, r):
     return img
 
 
-def nubby_sprite(blink, size=8, r=4.1):
+def nobble_sprite(blink, size=8, r=4.1):
     img = [[0] * size for _ in range(size)]
     c = size / 2
     k = r / 4.1                      # scale features with the body
@@ -692,7 +695,7 @@ def icon_sprite(colour, symbol, round_badge=False):
 
 # ---------------------------------------------------------------- DS board (bottom screen)
 def launcher(cv, base):
-    """Nozzle hanging from the pipe that Nubby is fired from."""
+    """Nozzle hanging from the pipe that Nobble is fired from."""
     for y in range(9, 18):
         w = 8 if y < 15 else 7
         for x in range(LAUNCH_X - w, LAUNCH_X + w):
@@ -749,9 +752,9 @@ def sky(y_off=0, seed=17):
 def render_title_top():
     cv = Canvas()
     cv.each(sky(0))
-    bubble_text(cv, bubble_mask("NUBBY", LOGO, 6, 1, 10, [3, 0, 2, -1, 1]), 5, **RED_LOGO)
+    bubble_text(cv, bubble_mask("NOBBLE", LOGO, 5, 1, 12, [3, 0, 2, -1, 1, 3]), 5, **RED_LOGO)
     bubble_text(cv, bubble_mask("DS", SMALL_GLYPHS, 4, 1, 68, [0, 2]), 4, **RED_LOGO)
-    draw_big_nubby(cv, 46, 140, 28)
+    draw_big_nobble(cv, 46, 140, 28)
     glossy_ball(cv, 208, 132, 20, (60, 190, 80), "8")
     glossy_ball(cv, 166, 170, 12, (250, 130, 40), "2")
     glossy_ball(cv, 236, 176, 11, (60, 140, 240), "16")
@@ -829,7 +832,7 @@ UI_PAL = [(0, 0, 0), (80, 24, 70), (170, 70, 140), (230, 110, 170), (255, 170, 2
 
 
 def portrait(expr):
-    """64x64 Nubby face for the top screen: happy, blink, wow or worry."""
+    """64x64 Nobble face for the top screen: happy, blink, wow or worry."""
     img = [[0] * 64 for _ in range(64)]
     cx, cy, r = 32, 34, 27
 
@@ -991,7 +994,7 @@ for d in "0123456789":
 
 STEEL = (118, 128, 156)
 FX_PAL = [(0, 0, 0), (110, 0, 20), (230, 30, 40), (255, 130, 150), (255, 255, 255), (150, 200, 240), (225, 240, 255)]
-obj_pal = pal16(NUBBY_PAL)
+obj_pal = pal16(NOBBLE_PAL)
 for p in TIER_PALS:
     obj_pal += pal16([(0, 0, 0)] + p)
 obj_pal += pal16([(0, 0, 0)] + FLASH_PAL)
@@ -1013,10 +1016,10 @@ def add_sprite(name, img):
     obj_tiles.extend(to_tiles(img, len(img[0]), len(img)))
 
 
-add_sprite("nubby", nubby_sprite(False, 16, 5.4))
-add_sprite("nubby_blink", nubby_sprite(True, 16, 5.4))
-add_sprite("nubby_big", nubby_sprite(False, 16, 7.4))
-add_sprite("nubby_big_blink", nubby_sprite(True, 16, 7.4))
+add_sprite("nobble", nobble_sprite(False, 16, 5.4))
+add_sprite("nobble_blink", nobble_sprite(True, 16, 5.4))
+add_sprite("nobble_big", nobble_sprite(False, 16, 7.4))
+add_sprite("nobble_big_blink", nobble_sprite(True, 16, 7.4))
 add_sprite("peg", peg_sprite(32, 11.6))         # template; numbers are drawn on in game
 
 
@@ -1114,10 +1117,10 @@ hdr = f"""// Generated by tools/gen_assets.py - do not edit.
 #define NUM_BOARDS {len(BOARD_THEMES)}
 
 // sprite tiles (32-byte units) and palette banks
-#define TILE_NUBBY {tile_of["nubby"]}
-#define TILE_NUBBY_BLINK {tile_of["nubby_blink"]}
-#define TILE_NUBBY_BIG {tile_of["nubby_big"]}
-#define TILE_NUBBY_BIG_BLINK {tile_of["nubby_big_blink"]}
+#define TILE_NOBBLE {tile_of["nobble"]}
+#define TILE_NOBBLE_BLINK {tile_of["nobble_blink"]}
+#define TILE_NOBBLE_BIG {tile_of["nobble_big"]}
+#define TILE_NOBBLE_BIG_BLINK {tile_of["nobble_big_blink"]}
 #define TILE_PEG {tile_of["peg"]}           // 32x32 disc template
 #define TILE_SOCKET {tile_of["socket"]}     // 32x32 ring for an empty slot
 #define TILE_DOT {tile_of["dot"]}
@@ -1138,7 +1141,7 @@ hdr = f"""// Generated by tools/gen_assets.py - do not edit.
 #define PEG_TILES {PEG_TILES}
 #define POPUP_TILES {POPUP_TILES}
 #define NUM_POPUPS {NUM_POPUPS}
-#define PAL_NUBBY 0
+#define PAL_NOBBLE 0
 #define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
 #define NUM_TIERS {len(TIERS)}
 #define PAL_FLASH {1 + len(TIERS)}

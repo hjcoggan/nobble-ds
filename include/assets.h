@@ -12,10 +12,10 @@
 #define NUM_BOARDS 3
 
 // sprite tiles (32-byte units) and palette banks
-#define TILE_NUBBY 0
-#define TILE_NUBBY_BLINK 4
-#define TILE_NUBBY_BIG 8
-#define TILE_NUBBY_BIG_BLINK 12
+#define TILE_NOBBLE 0
+#define TILE_NOBBLE_BLINK 4
+#define TILE_NOBBLE_BIG 8
+#define TILE_NOBBLE_BIG_BLINK 12
 #define TILE_PEG 16           // 32x32 disc template
 #define TILE_SOCKET 32     // 32x32 ring for an empty slot
 #define TILE_DOT 48
@@ -36,7 +36,7 @@
 #define PEG_TILES 16
 #define POPUP_TILES 8
 #define NUM_POPUPS 6
-#define PAL_NUBBY 0
+#define PAL_NOBBLE 0
 #define PAL_TIER(t) (1 + (t))                   // peg colour by value tier
 #define NUM_TIERS 9
 #define PAL_FLASH 10

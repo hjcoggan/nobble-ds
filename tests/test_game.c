@@ -24,7 +24,7 @@ static void empty_pyramid(Game *g)
 
 static int random_angle(Game *g) { return (int)(game_rand(g) % (2 * AIM_MAX + 1)) - AIM_MAX; }
 
-// Launch and run until Nubby falls out, checking it stays inside the board.
+// Launch and run until Nobble falls out, checking it stays inside the board.
 static int run_launch(Game *g, int angle)
 {
     Events ev;
@@ -276,22 +276,22 @@ static void test_items(void)
 
 static void test_perks(void)
 {
-    // waffle: first pop triggers 2 random items. Pump normally fires on
+    // ignition: first pop triggers 2 random items. Pump normally fires on
     // launch only, so its flash after the first pop comes from the perk.
     Game g = board_with(6, ITEM_PUMP);
-    g.perks[g.nperks++] = PERK_WAFFLE;
+    g.perks[g.nperks++] = PERK_IGNITION;
     game_launch(&g, 0);
     g.item_flash[0] = 0;
     Events ev;
     while (!game_step(&g, &ev) && g.hits == 0) {}
     CHECK(g.item_flash[0] && g.perk_flash[0]);
 
-    // trophy: passing the goal triggers every item. Encore normally waits
-    // for Nubby to fall out, so extra score right after the first pop can
+    // payday: passing the goal triggers every item. Encore normally waits
+    // for Nobble to fall out, so extra score right after the first pop can
     // only have come from the perk.
     g = board_with(7, ITEM_PIGGY);
     g.items[g.nitems++] = ITEM_ENCORE;
-    g.perks[g.nperks++] = PERK_TROPHY;
+    g.perks[g.nperks++] = PERK_PAYDAY;
     g.quota = 1;
     first_pop(&g);
     CHECK(g.passed_goal);

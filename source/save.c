@@ -3,7 +3,7 @@
 #include <string.h>
 #include "save.h"
 
-#define SAVE_PATH "fat:/nubby-ds.sav"
+#define SAVE_PATH "fat:/nobble-ds.sav"
 #define SAVE_MAGIC 0x4255554Eu    // "NUUB"
 #define SAVE_VERSION 1
 

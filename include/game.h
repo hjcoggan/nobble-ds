@@ -1,4 +1,4 @@
-// Nubby's run: launch physics, popping pegs, quotas, restocks, items, perks
+// Nobble's run: launch physics, popping pegs, quotas, restocks, items, perks
 // and the shop. Hardware independent so it can be tested on the host.
 //
 // Pegs hold powers of two. A hit scores the peg's value and halves it; a 1
@@ -21,13 +21,13 @@
 #define CEILING_Y 12
 #define LAUNCH_X 128
 #define LAUNCH_Y 22
-#define FLOOR_Y 180          // where SPRINGS bounces Nubby back up
-#define EXIT_Y 200           // Nubby is gone once it falls past this
+#define FLOOR_Y 180          // where SPRINGS bounces Nobble back up
+#define EXIT_Y 200           // Nobble is gone once it falls past this
 #define NUM_SLOTS 20         // most pegs any layout has
 #define NUM_LAYOUTS 8
 #define PEG_R 11
-#define NUBBY_R 5
-#define BIG_NUBBY_R 7
+#define NOBBLE_R 5
+#define BIG_NOBBLE_R 7
 
 #define AIM_MAX 56           // aim angle limit either side of straight down (256 = full turn)
 #define START_LIVES 3
@@ -48,7 +48,7 @@
 typedef struct { int16_t x, y; } Slot;
 
 // Where the pegs sit. Each stretch of rounds uses one of these; the pegs
-// are spread out so Nubby can always fit between any two.
+// are spread out so Nobble can always fit between any two.
 typedef struct {
     const char *name;
     int n;
@@ -63,8 +63,8 @@ enum {
     TRIG_LAUNCH,
     TRIG_FIRST_POP,
     TRIG_PEG_GONE,      // a peg is popped away completely
-    TRIG_WALL,          // Nubby bounces off a side wall
-    TRIG_DIES,          // Nubby falls out of the board
+    TRIG_WALL,          // Nobble bounces off a side wall
+    TRIG_DIES,          // Nobble falls out of the board
     TRIG_EVERY_8,       // every 8 pegs popped
     NUM_TRIGGERS
 };
@@ -79,20 +79,20 @@ enum {
     ITEM_PIGGY,     // peg gone: 1 in 4 chance of a coin
     ITEM_ENCORE,    // dies: +25% of this launch's score
     ITEM_CHAIN,     // every 8 pops: double a random peg
-    ITEM_BIG,       // passive: Nubby is bigger
+    ITEM_BIG,       // passive: Nobble is bigger
     ITEM_HEART,     // passive: +1 life now and +1 to the life cap
     NUM_ITEMS
 };
 
 enum {
-    PERK_CHEESY,    // every 3 seconds in flight: trigger all items
-    PERK_CHAOTIC,   // every second in flight: trigger a random item
-    PERK_WAFFLE,    // first pop: trigger 2 random items
-    PERK_KEBAB,     // Nubby dies: 50% chance to trigger a random item
-    PERK_SPRINGY,   // wall bounce: 1 in 4 chance to trigger a random item
-    PERK_TROPHY,    // passing the goal: trigger all items
-    PERK_BUCKSHOT,  // first pop on the biggest peg: 3 random items
-    PERK_HOUSE,     // 15 pegs popped: trigger all items
+    PERK_CONVEYOR,    // every 3 seconds in flight: trigger all items
+    PERK_GREMLIN,   // every second in flight: trigger a random item
+    PERK_IGNITION,    // first pop: trigger 2 random items
+    PERK_RECYCLER,     // Nobble dies: 50% chance to trigger a random item
+    PERK_BUMPER,   // wall bounce: 1 in 4 chance to trigger a random item
+    PERK_PAYDAY,    // passing the goal: trigger all items
+    PERK_JACKPOT,  // first pop on the biggest peg: 3 random items
+    PERK_DOMINO,     // 15 pegs popped: trigger all items
     NUM_PERKS
 };
 
@@ -100,7 +100,7 @@ enum {
 enum {
     BOSS_NONE,
     BOSS_LASER,     // a laser wipes out a row of pegs every couple of seconds
-    BOSS_WIND,      // gusts push Nubby sideways, switching direction
+    BOSS_WIND,      // gusts push Nobble sideways, switching direction
     BOSS_ARMOR,     // some pegs are armoured: the first hit only breaks the armour
     NUM_BOSSES
 };
@@ -132,7 +132,7 @@ extern const PerkInfo perk_info[NUM_PERKS];
 typedef struct {
     uint8_t pop;        // a peg was hit (and maybe vanished)
     uint8_t gone;       // ...and it disappeared
-    uint8_t wall;       // Nubby bounced off a wall
+    uint8_t wall;       // Nobble bounced off a wall
     uint8_t spring;     // the springs fired
     uint8_t item;       // an item fired
     uint8_t laser;      // the boss laser fired
@@ -191,7 +191,7 @@ void game_set_layout(Game *g, int layout);   // move the pegs onto another layou
 
 void game_new_run(Game *g, uint32_t seed);
 void game_launch(Game *g, int angle);   // angle: 0 = straight down, +/- AIM_MAX
-int game_step(Game *g, Events *ev);     // one frame; returns 1 when Nubby falls out
+int game_step(Game *g, Events *ev);     // one frame; returns 1 when Nobble falls out
 Result game_resolve(Game *g);           // after a launch: restock or lose a life
 
 int game_shop_due(const Game *g);       // a shop comes before this round

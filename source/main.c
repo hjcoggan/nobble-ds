@@ -1,4 +1,4 @@
-// Nubby DS: the board on the touch screen, the dashboard on the top screen.
+// Nobble DS: the board on the touch screen, the dashboard on the top screen.
 #include <nds.h>
 #include <stdio.h>
 #include "assets.h"
@@ -23,7 +23,7 @@ static const uint8_t *const boards[NUM_BOARDS] = { board0_bin, board1_bin, board
 #define NUM_SPARKS 40
 
 // bottom screen sprites (lower ids draw on top)
-#define OBJ_NUBBY 0
+#define OBJ_NOBBLE 0
 #define OBJ_PAUSE 1
 #define OBJ_POPUP 2               // NUM_POPUPS score popups
 #define OBJ_SPARK (OBJ_POPUP + NUM_POPUPS)
@@ -43,7 +43,7 @@ static const uint8_t *const boards[NUM_BOARDS] = { board0_bin, board1_bin, board
 #define PEG_TILE(i) (TILE_FREE + (i) * PEG_TILES)
 #define POPUP_TILE(i) (TILE_FREE + NUM_SLOTS * PEG_TILES + (i) * POPUP_TILES)
 
-// Nubby's face in the dashboard window (see tools/gen_assets.py)
+// Nobble's face in the dashboard window (see tools/gen_assets.py)
 #define FACE_X 180
 #define FACE_Y 24
 
@@ -410,7 +410,7 @@ static void hud_text(void)
 
 static void hud_sprites(void)
 {
-    // Nubby's face reacts to what's happening
+    // Nobble's face reacts to what's happening
     int f = face;
     if (face_timer) face_timer--;
     else f = FACE_HAPPY;
@@ -445,8 +445,8 @@ static void board_sprites(void)
     int ny = flying ? game.y >> 8 : LAUNCH_Y;
     if (flying || aiming) {
         int big = game_has(&game, ITEM_BIG);
-        int t = big ? (blink ? TILE_NUBBY_BIG_BLINK : TILE_NUBBY_BIG) : (blink ? TILE_NUBBY_BLINK : TILE_NUBBY);
-        spr(BOT, OBJ_NUBBY, nx - 8, ny - 8, SpriteSize_16x16, t, PAL_NUBBY, 1);
+        int t = big ? (blink ? TILE_NOBBLE_BIG_BLINK : TILE_NOBBLE_BIG) : (blink ? TILE_NOBBLE_BLINK : TILE_NOBBLE);
+        spr(BOT, OBJ_NOBBLE, nx - 8, ny - 8, SpriteSize_16x16, t, PAL_NOBBLE, 1);
     }
     if (state == ST_AIM || state == ST_FLY)
         spr(BOT, OBJ_PAUSE, 236, 1, SpriteSize_16x16, TILE_PAUSE, PAL_ICON, 1);
@@ -455,7 +455,7 @@ static void board_sprites(void)
         int16_t xs[AIM_DOTS], ys[AIM_DOTS];
         int n = game_predict(&game, aim, xs, ys, AIM_DOTS);
         for (int d = 0; d < n; d++)
-            spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NUBBY, 1);
+            spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NOBBLE, 1);
     }
 
     for (int i = 0; i < game.nslots; i++) {
@@ -637,11 +637,11 @@ static const struct { const char *role, *name; } credits[] = {
     { "SOUND DESIGNER", "CLAUDE" }, { "QA LEAD", "CLAUDE" },
     { "QA TESTER", "HEATH" }, { "BALANCE TESTER", "HEATH" },
     { "ECONOMY DESIGNER", "CLAUDE" }, { "PEG ENGINEER", "CLAUDE" },
-    { "NUBBY WRANGLER", "CLAUDE" },
+    { "NOBBLE WRANGLER", "CLAUDE" },
 };
 #define NUM_ROLES ((int)(sizeof(credits) / sizeof(credits[0])))
 #define CREDITS_LEAD 24           // blank rows so the list starts below the screen
-#define CREDITS_HEAD 4            // "NUBBY DS", blank, "CREDITS", blank
+#define CREDITS_HEAD 4            // "NOBBLE DS", blank, "CREDITS", blank
 #define CREDITS_TAIL (CREDITS_LEAD + CREDITS_HEAD + NUM_ROLES * 3 + 1)
 #define CREDITS_END (CREDITS_TAIL + 5)
 
@@ -650,7 +650,7 @@ static void credits_write_row(int r)
 {
     text_clear_rows(TOP, r & 31, (r & 31) + 1);
     int i = r - CREDITS_LEAD;
-    if (i == 0) text_center(TOP, r, "NUBBY DS", TXT_GOLD);
+    if (i == 0) text_center(TOP, r, "NOBBLE DS", TXT_GOLD);
     if (i == 2) text_center(TOP, r, "CREDITS", TXT_PLAIN);
     i -= CREDITS_HEAD;
     if (i < 0) return;

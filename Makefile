@@ -1,5 +1,5 @@
 #---------------------------------------------------------------------------------
-# Nubby DS - built with devkitARM + libnds (devkitPro's nds-dev package)
+# Nobble DS - built with devkitARM + libnds (devkitPro's nds-dev package)
 #---------------------------------------------------------------------------------
 .SUFFIXES:
 
@@ -7,13 +7,13 @@ ifeq ($(strip $(DEVKITARM)),)
 $(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
 endif
 
-GAME_TITLE     := Nubby DS
+GAME_TITLE     := Nobble DS
 GAME_SUBTITLE1 := A number-popping roguelike
 GAME_SUBTITLE2 := Made with Claude
 
 include $(DEVKITARM)/ds_rules
 
-TARGET   := nubby-ds
+TARGET   := nobble-ds
 BUILD    := build
 SOURCES  := source
 INCLUDES := include

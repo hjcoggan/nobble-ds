@@ -20,7 +20,7 @@
 const BossInfo boss_info[NUM_BOSSES] = {
     [BOSS_NONE]  = { "", "", "" },
     [BOSS_LASER] = { "LASER GRID",    "A LASER WIPES OUT A",   "ROW EVERY 2 SECONDS" },
-    [BOSS_WIND]  = { "WIND TUNNEL",   "GUSTS PUSH NUBBY",      "LEFT AND RIGHT" },
+    [BOSS_WIND]  = { "WIND TUNNEL",   "GUSTS PUSH NOBBLE",      "LEFT AND RIGHT" },
     [BOSS_ARMOR] = { "ARMOUR PLATING", "ARMOURED PEGS NEED",   "A HIT TO CRACK FIRST" },
 };
 
@@ -74,7 +74,7 @@ const char *const trigger_text[NUM_TRIGGERS] = {
     [TRIG_FIRST_POP] = "FIRST PEG POPPED:",
     [TRIG_PEG_GONE]  = "PEG POPPED AWAY:",
     [TRIG_WALL]      = "WALL BOUNCE:",
-    [TRIG_DIES]      = "NUBBY FALLS OUT:",
+    [TRIG_DIES]      = "NOBBLE FALLS OUT:",
     [TRIG_EVERY_8]   = "EVERY 8 PEGS POPPED:",
 };
 
@@ -88,19 +88,19 @@ const ItemInfo item_info[NUM_ITEMS] = {
     [ITEM_PIGGY]    = { "PIGGY",    "1 IN 4 CHANCE: +1 COIN", TRIG_PEG_GONE, 4 },
     [ITEM_ENCORE]   = { "ENCORE",   "+25% OF LAUNCH SCORE",  TRIG_DIES,      6 },
     [ITEM_CHAIN]    = { "CHAIN",    "DOUBLE A RANDOM PEG",   TRIG_EVERY_8,   5 },
-    [ITEM_BIG]      = { "BIG",      "NUBBY IS BIGGER",       TRIG_PASSIVE,   6 },
+    [ITEM_BIG]      = { "BIG",      "NOBBLE IS BIGGER",       TRIG_PASSIVE,   6 },
     [ITEM_HEART]    = { "HEART",    "+1 LIFE AND MAX LIVES", TRIG_PASSIVE,   7 },
 };
 
 const PerkInfo perk_info[NUM_PERKS] = {
-    [PERK_CHEESY]   = { "CHEESY",   "EVERY 3 SECONDS:",      "TRIGGER ALL ITEMS" },
-    [PERK_CHAOTIC]  = { "CHAOTIC",  "EVERY SECOND:",         "TRIGGER A RANDOM ITEM" },
-    [PERK_WAFFLE]   = { "WAFFLE",   "FIRST PEG POPPED:",     "TRIGGER 2 RANDOM ITEMS" },
-    [PERK_KEBAB]    = { "KEBAB",    "NUBBY FALLS OUT: 50%",  "TRIGGER A RANDOM ITEM" },
-    [PERK_SPRINGY]  = { "SPRINGY",  "WALL BOUNCE: 1 IN 4",   "TRIGGER A RANDOM ITEM" },
-    [PERK_TROPHY]   = { "TROPHY",   "PASSING THE GOAL:",     "TRIGGER ALL ITEMS" },
-    [PERK_BUCKSHOT] = { "BUCKSHOT", "FIRST POP IS THE TOP",  "PEG: 3 RANDOM ITEMS" },
-    [PERK_HOUSE]    = { "HOUSE",    "15 PEGS POPPED:",       "TRIGGER ALL ITEMS" },
+    [PERK_CONVEYOR]   = { "CONVEYOR", "EVERY 3 SECONDS:",      "TRIGGER ALL ITEMS" },
+    [PERK_GREMLIN]  = { "GREMLIN",  "EVERY SECOND:",         "TRIGGER A RANDOM ITEM" },
+    [PERK_IGNITION]   = { "IGNITION", "FIRST PEG POPPED:",     "TRIGGER 2 RANDOM ITEMS" },
+    [PERK_RECYCLER]    = { "RECYCLER", "NOBBLE FALLS OUT: 50%",  "TRIGGER A RANDOM ITEM" },
+    [PERK_BUMPER]  = { "BUMPER",   "WALL BOUNCE: 1 IN 4",   "TRIGGER A RANDOM ITEM" },
+    [PERK_PAYDAY]   = { "PAYDAY",   "PASSING THE GOAL:",     "TRIGGER ALL ITEMS" },
+    [PERK_JACKPOT] = { "JACKPOT",  "FIRST POP IS THE TOP",  "PEG: 3 RANDOM ITEMS" },
+    [PERK_DOMINO]    = { "DOMINO",   "15 PEGS POPPED:",       "TRIGGER ALL ITEMS" },
 };
 
 // sin for angles 0..64 (a quarter turn), 8.8
@@ -146,7 +146,7 @@ int game_has_perk(const Game *g, int perk)
     return 0;
 }
 
-int game_radius(const Game *g) { return game_has(g, ITEM_BIG) ? BIG_NUBBY_R : NUBBY_R; }
+int game_radius(const Game *g) { return game_has(g, ITEM_BIG) ? BIG_NOBBLE_R : NOBBLE_R; }
 
 int game_potential(const Game *g)
 {
@@ -290,7 +290,7 @@ static void check_goal(Game *g)
 {
     if (g->passed_goal || g->score < g->quota) return;
     g->passed_goal = 1;
-    if (game_has_perk(g, PERK_TROPHY)) trigger_all(g, PERK_TROPHY);
+    if (game_has_perk(g, PERK_PAYDAY)) trigger_all(g, PERK_PAYDAY);
 }
 
 // Score peg i and halve it. Returns 1 if it vanished.
@@ -309,7 +309,7 @@ static int pop_peg(Game *g, int i)
     }
     check_goal(g);
     if (g->hits % 8 == 0) fire(g, TRIG_EVERY_8);
-    if (g->hits == 15 && game_has_perk(g, PERK_HOUSE)) trigger_all(g, PERK_HOUSE);
+    if (g->hits == 15 && game_has_perk(g, PERK_DOMINO)) trigger_all(g, PERK_DOMINO);
     if (!g->pegs[i]) fire(g, TRIG_PEG_GONE);
     return g->pegs[i] == 0;
 }
@@ -440,7 +440,7 @@ void game_launch(Game *g, int angle)
     fire(g, TRIG_LAUNCH);
 }
 
-// Bounce Nubby off a peg at (cx, cy). Returns 1 on contact.
+// Bounce Nobble off a peg at (cx, cy). Returns 1 on contact.
 static int collide(Game *g, int nr, int cx, int cy)
 {
     int32_t dx = g->x - FIX(cx), dy = g->y - FIX(cy);
@@ -470,7 +470,7 @@ static int collide(Game *g, int nr, int cx, int cy)
     return 1;
 }
 
-// Nubby hit peg i.
+// Nobble hit peg i.
 static void hit_peg(Game *g, int i)
 {
     if (g->armor[i]) {                  // boss armour: this hit only cracks it
@@ -485,11 +485,11 @@ static void hit_peg(Game *g, int i)
     pop_peg(g, i);
     if (!first) return;
     fire(g, TRIG_FIRST_POP);
-    if (game_has_perk(g, PERK_WAFFLE)) trigger_random(g, 2, PERK_WAFFLE);
-    if (was_top && game_has_perk(g, PERK_BUCKSHOT)) trigger_random(g, 3, PERK_BUCKSHOT);
+    if (game_has_perk(g, PERK_IGNITION)) trigger_random(g, 2, PERK_IGNITION);
+    if (was_top && game_has_perk(g, PERK_JACKPOT)) trigger_random(g, 3, PERK_JACKPOT);
 }
 
-// Walls and ceiling; returns 1 if Nubby bounced off a side wall.
+// Walls and ceiling; returns 1 if Nobble bounced off a side wall.
 static int walls(int32_t *x, int32_t *y, int32_t *vx, int32_t *vy, int r)
 {
     int hit = 0;
@@ -534,7 +534,7 @@ static void substep(Game *g, Events *ev)
     if (walls(&g->x, &g->y, &g->vx, &g->vy, r)) {
         ev->wall = 1;
         fire(g, TRIG_WALL);
-        if (game_has_perk(g, PERK_SPRINGY) && rand_below(g, 4) == 0) trigger_random(g, 1, PERK_SPRINGY);
+        if (game_has_perk(g, PERK_BUMPER) && rand_below(g, 4) == 0) trigger_random(g, 1, PERK_BUMPER);
     }
 
     for (int i = 0; i < g->nslots; i++)
@@ -585,10 +585,10 @@ int game_step(Game *g, Events *ev)
     if (g->boss == BOSS_WIND && g->frames % WIND_FLIP == 0) g->wind = -g->wind;
     if (g->boss == BOSS_LASER) laser(g, ev);
 
-    if (game_has_perk(g, PERK_CHEESY) && g->frames % 180 == 0) trigger_all(g, PERK_CHEESY);
-    if (game_has_perk(g, PERK_CHAOTIC) && g->frames % 60 == 0) trigger_random(g, 1, PERK_CHAOTIC);
+    if (game_has_perk(g, PERK_CONVEYOR) && g->frames % 180 == 0) trigger_all(g, PERK_CONVEYOR);
+    if (game_has_perk(g, PERK_GREMLIN) && g->frames % 60 == 0) trigger_random(g, 1, PERK_GREMLIN);
 
-    // if Nubby comes to rest on something, give it a shove
+    // if Nobble comes to rest on something, give it a shove
     int slow = g->vx < 40 && g->vx > -40 && g->vy < 40 && g->vy > -40;
     g->still = slow ? g->still + 1 : 0;
     if (g->still > 30) {
@@ -600,8 +600,8 @@ int game_step(Game *g, Events *ev)
     int out = 0;
     if (g->y > FIX(EXIT_Y) || g->frames > LAUNCH_TIMEOUT) {
         fire(g, TRIG_DIES);
-        if (game_has_perk(g, PERK_KEBAB) && rand_below(g, 2) == 0) trigger_random(g, 1, PERK_KEBAB);
-        // springs can pull Nubby back from the brink
+        if (game_has_perk(g, PERK_RECYCLER) && rand_below(g, 2) == 0) trigger_random(g, 1, PERK_RECYCLER);
+        // springs can pull Nobble back from the brink
         out = g->y > FIX(FLOOR_Y) || g->frames > LAUNCH_TIMEOUT;
         if (out) g->flying = 0;
     }
