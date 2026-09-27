@@ -12,10 +12,11 @@
 #define WIND_PUSH 6          // sideways push per frame in the wind tunnel
 #define WIND_FLIP 90         // frames between wind changes
 #define LASER_EVERY 160      // frames between laser shots
-#define QUOTA_STEP 25        // quota rises 2.5% of the board each round
+#define LASER_BAND 12        // pegs this far above or below the beam are hit
+#define LAYOUT_EVERY 3       // rounds on each layout
+#define QUOTA_STEP 20        // quota rises 2% of the board each round (tenths of a percent)
 #define MAX_DEPTH 2                // items triggering items triggering items
 
-// 6 rows alternating 4 and 3 pegs
 const BossInfo boss_info[NUM_BOSSES] = {
     [BOSS_NONE]  = { "", "", "" },
     [BOSS_LASER] = { "LASER GRID",    "A LASER WIPES OUT A",   "ROW EVERY 2 SECONDS" },
@@ -23,17 +24,48 @@ const BossInfo boss_info[NUM_BOSSES] = {
     [BOSS_ARMOR] = { "ARMOUR PLATING", "ARMOURED PEGS NEED",   "A HIT TO CRACK FIRST" },
 };
 
-static const int16_t row_y[NUM_ROWS] = { 46, 70, 94, 118, 142, 166 };
-
-int game_row_y(int row) { return row_y[row]; }
-
-const Slot slots[NUM_SLOTS] = {
-    { 51, 46 }, { 89, 46 }, { 127, 46 }, { 165, 46 }, { 203, 46 },
-    { 32, 70 }, { 70, 70 }, { 108, 70 }, { 146, 70 }, { 184, 70 }, { 222, 70 },
-    { 51, 94 }, { 89, 94 }, { 127, 94 }, { 165, 94 }, { 203, 94 },
-    { 32, 118 }, { 70, 118 }, { 108, 118 }, { 146, 118 }, { 184, 118 }, { 222, 118 },
-    { 51, 142 }, { 89, 142 }, { 127, 142 }, { 165, 142 }, { 203, 142 },
-    { 32, 166 }, { 70, 166 }, { 108, 166 }, { 146, 166 }, { 184, 166 }, { 222, 166 },
+const Layout layouts[NUM_LAYOUTS] = {
+    { "CLASSIC", 18, {
+        { 53, 52 }, { 103, 52 }, { 153, 52 }, { 203, 52 }, { 78, 82 }, { 128, 82 },
+        { 178, 82 }, { 53, 112 }, { 103, 112 }, { 153, 112 }, { 203, 112 }, { 78, 142 },
+        { 128, 142 }, { 178, 142 }, { 53, 168 }, { 103, 168 }, { 153, 168 }, { 203, 168 },
+    } },
+    { "DIAMOND", 16, {
+        { 106, 50 }, { 150, 50 }, { 84, 76 }, { 128, 76 }, { 172, 76 }, { 62, 102 },
+        { 106, 102 }, { 150, 102 }, { 194, 102 }, { 40, 128 }, { 84, 128 }, { 128, 128 },
+        { 172, 128 }, { 216, 128 }, { 106, 156 }, { 150, 156 },
+    } },
+    { "FUNNEL", 16, {
+        { 40, 50 }, { 80, 50 }, { 176, 50 }, { 216, 50 }, { 62, 84 }, { 194, 84 },
+        { 100, 86 }, { 156, 86 }, { 70, 118 }, { 186, 118 }, { 128, 122 }, { 96, 140 },
+        { 160, 140 }, { 40, 166 }, { 128, 166 }, { 216, 166 },
+    } },
+    { "COLUMNS", 19, {
+        { 44, 58 }, { 104, 58 }, { 152, 58 }, { 212, 58 }, { 44, 96 }, { 104, 96 },
+        { 152, 96 }, { 212, 96 }, { 44, 134 }, { 104, 134 }, { 152, 134 }, { 212, 134 },
+        { 74, 77 }, { 182, 77 }, { 74, 115 }, { 182, 115 }, { 74, 153 }, { 182, 153 },
+        { 128, 166 },
+    } },
+    { "RING", 13, {
+        { 200, 108 }, { 186, 142 }, { 150, 163 }, { 106, 163 }, { 70, 142 }, { 56, 108 },
+        { 70, 74 }, { 106, 53 }, { 150, 53 }, { 186, 74 }, { 128, 110 }, { 40, 56 },
+        { 216, 56 },
+    } },
+    { "PYRAMID", 15, {
+        { 128, 52 }, { 105, 78 }, { 151, 78 }, { 82, 104 }, { 128, 104 }, { 174, 104 },
+        { 59, 130 }, { 105, 130 }, { 151, 130 }, { 197, 130 }, { 36, 158 }, { 82, 158 },
+        { 128, 158 }, { 174, 158 }, { 220, 158 },
+    } },
+    { "ZIGZAG", 13, {
+        { 48, 50 }, { 128, 50 }, { 208, 50 }, { 88, 78 }, { 168, 78 }, { 48, 106 },
+        { 128, 106 }, { 208, 106 }, { 88, 134 }, { 168, 134 }, { 48, 162 }, { 128, 162 },
+        { 208, 162 },
+    } },
+    { "SCATTER", 13, {
+        { 64, 54 }, { 150, 50 }, { 206, 70 }, { 40, 92 }, { 104, 88 }, { 170, 104 },
+        { 222, 128 }, { 74, 126 }, { 132, 138 }, { 40, 160 }, { 104, 166 }, { 186, 158 },
+        { 224, 168 },
+    } },
 };
 
 const char *const trigger_text[NUM_TRIGGERS] = {
@@ -119,12 +151,18 @@ int game_radius(const Game *g) { return game_has(g, ITEM_BIG) ? BIG_NUBBY_R : NU
 int game_potential(const Game *g)
 {
     int total = 0;
-    for (int i = 0; i < NUM_SLOTS; i++)
+    for (int i = 0; i < g->nslots; i++)
         if (g->pegs[i]) total += g->pegs[i] * 2 - 1;     // 8 pays 8+4+2+1
     return total;
 }
 
-static int32_t new_peg_value(const Game *g) { return 1 << (g->round / 4); }
+// New pegs double in value every other round, so the numbers keep climbing.
+// (The quota is a share of the board, so this doesn't change the difficulty.)
+static int32_t new_peg_value(const Game *g)
+{
+    int shift = (g->round - 1) / 2;
+    return 1 << (shift > 20 ? 20 : shift);
+}
 
 // The quota is a share of everything on the board, rising each round.
 static int quota_for(const Game *g)
@@ -132,6 +170,7 @@ static int quota_for(const Game *g)
     int pct = 150 + (g->round - 1) * QUOTA_STEP;   // tenths of a percent
     if (pct > 700) pct = 700;
     int q = game_potential(g) * pct / 1000;
+    if (g->boss) q = q * 3 / 4;               // the hazard makes up the difference
     return q < 5 ? 5 : q;
 }
 
@@ -147,22 +186,51 @@ static void begin_round(Game *g)
     // armour goes on the more valuable half of the pegs
     int32_t mid = 0;
     int n = 0;
-    for (int i = 0; i < NUM_SLOTS; i++)
+    for (int i = 0; i < g->nslots; i++)
         if (g->pegs[i]) {
             mid += g->pegs[i];
             n++;
         }
     mid = n ? mid / n : 0;
-    for (int i = 0; i < NUM_SLOTS; i++) {
-        g->armor[i] = g->boss == BOSS_ARMOR && g->pegs[i] && g->pegs[i] >= mid && rand_below(g, 3);
+    for (int i = 0; i < g->nslots; i++) {
+        g->armor[i] = g->boss == BOSS_ARMOR && g->pegs[i] && g->pegs[i] >= mid && rand_below(g, 2);
         g->armor_start[i] = g->armor[i];
         g->round_start[i] = g->pegs[i];
     }
     g->wind = rand_below(g, 2) ? 1 : -1;
-    g->laser_row = -1;
+    g->laser_y = -1;
     g->laser_timer = 0;
     g->quota = quota_for(g);
     g->score = 0;
+}
+
+// Move to another layout, keeping the biggest pegs (in a shuffled order).
+void game_set_layout(Game *g, int layout)
+{
+    int32_t vals[NUM_SLOTS];
+    int n = 0;
+    for (int i = 0; i < g->nslots; i++)
+        if (g->pegs[i]) vals[n++] = g->pegs[i];
+    for (int i = 1; i < n; i++)                         // biggest first
+        for (int j = i; j > 0 && vals[j] > vals[j - 1]; j--) {
+            int32_t t = vals[j];
+            vals[j] = vals[j - 1];
+            vals[j - 1] = t;
+        }
+    g->layout = layout;
+    g->nslots = layouts[layout].n;
+    if (n > g->nslots) n = g->nslots;
+    for (int i = n - 1; i > 0; i--) {                   // shuffle what we keep
+        int j = rand_below(g, i + 1);
+        int32_t t = vals[i];
+        vals[i] = vals[j];
+        vals[j] = t;
+    }
+    for (int i = 0; i < NUM_SLOTS; i++) {
+        g->slot[i] = layouts[layout].pos[i];
+        g->pegs[i] = i < n ? vals[i] : i < g->nslots ? new_peg_value(g) : 0;
+        g->cooldown[i] = g->flash[i] = g->armor[i] = 0;
+    }
 }
 
 void game_new_run(Game *g, uint32_t seed)
@@ -178,11 +246,14 @@ void game_new_run(Game *g, uint32_t seed)
     g->restocks = g->perfect = 0;
     for (int s = 0; s < MAX_ITEMS; s++) g->item_flash[s] = 0;
     for (int s = 0; s < MAX_PERKS; s++) g->perk_flash[s] = 0;
-    // a starter board: mostly 1s and 2s with a couple of 4s
+    // a starter board on a random layout: mostly 1s and 2s with a few 4s
+    g->layout = rand_below(g, NUM_LAYOUTS);
+    g->nslots = layouts[g->layout].n;
     for (int i = 0; i < NUM_SLOTS; i++) {
+        g->slot[i] = layouts[g->layout].pos[i];
         int r = rand_below(g, 100);
-        g->pegs[i] = r < 30 ? 0 : r < 70 ? 1 : r < 92 ? 2 : 4;
-        g->cooldown[i] = g->flash[i] = 0;
+        g->pegs[i] = i >= g->nslots ? 0 : r < 55 ? 1 : r < 85 ? 2 : 4;
+        g->cooldown[i] = g->flash[i] = g->armor[i] = 0;
     }
     begin_round(g);
 }
@@ -196,7 +267,7 @@ static void trigger_all(Game *g, int perk);
 static int pick_peg(Game *g, int want)   // want: 0 random, 1 lowest, 2 highest
 {
     int best = -1, n = 0;
-    for (int i = 0; i < NUM_SLOTS; i++) {
+    for (int i = 0; i < g->nslots; i++) {
         if (!g->pegs[i]) continue;
         if (want == 0) {
             if (rand_below(g, ++n) == 0) best = i;       // reservoir pick
@@ -210,7 +281,7 @@ static int pick_peg(Game *g, int want)   // want: 0 random, 1 lowest, 2 highest
 static int highest_value(const Game *g)
 {
     int32_t v = 0;
-    for (int i = 0; i < NUM_SLOTS; i++)
+    for (int i = 0; i < g->nslots; i++)
         if (g->pegs[i] > v) v = g->pegs[i];
     return v;
 }
@@ -264,7 +335,7 @@ static void run_item(Game *g, int slot)
         break;
     case ITEM_SEEDER: {
         int empty = -1, n = 0;
-        for (int k = 0; k < NUM_SLOTS; k++)
+        for (int k = 0; k < g->nslots; k++)
             if (!g->pegs[k] && rand_below(g, ++n) == 0) empty = k;
         if (empty >= 0) {
             g->pegs[empty] = new_peg_value(g);
@@ -364,7 +435,7 @@ void game_launch(Game *g, int angle)
     g->vy = icos(angle) * LAUNCH_SPEED / 256;
     g->score = g->hits = g->frames = g->still = g->spring_used = 0;
     g->ricochets = g->passed_goal = 0;
-    g->laser_row = -1;
+    g->laser_y = -1;
     g->flying = 1;
     fire(g, TRIG_LAUNCH);
 }
@@ -466,40 +537,38 @@ static void substep(Game *g, Events *ev)
         if (game_has_perk(g, PERK_SPRINGY) && rand_below(g, 4) == 0) trigger_random(g, 1, PERK_SPRINGY);
     }
 
-    for (int i = 0; i < NUM_SLOTS; i++)
-        if (g->pegs[i] && collide(g, r, slots[i].x, slots[i].y) && !g->cooldown[i]) hit_peg(g, i);
+    for (int i = 0; i < g->nslots; i++)
+        if (g->pegs[i] && collide(g, r, g->slot[i].x, g->slot[i].y) && !g->cooldown[i]) hit_peg(g, i);
 }
 
-// Boss laser: every LASER_EVERY frames in flight it locks onto a row with
-// pegs, warns, then wipes the row out. Wiped pegs score nothing.
+// Boss laser: every LASER_EVERY frames in flight it locks onto the height of
+// a random peg, warns, then wipes out every peg in that band. Wiped pegs
+// score nothing.
 static void laser(Game *g, Events *ev)
 {
-    if (g->laser_row < 0) {
+    if (g->laser_y < 0) {
         if (g->frames % LASER_EVERY != LASER_EVERY / 2) return;
-        int best = -1, n = 0;
-        for (int row = 0; row < NUM_ROWS; row++) {
-            int any = 0;
-            for (int i = 0; i < NUM_SLOTS; i++) any |= g->pegs[i] && slots[i].y == row_y[row];
-            if (any && rand_below(g, ++n) == 0) best = row;
-        }
-        if (best < 0) return;
-        g->laser_row = best;
+        int i = pick_peg(g, 0);
+        if (i < 0) return;
+        g->laser_y = g->slot[i].y;
         g->laser_timer = 0;
         return;
     }
     g->laser_timer++;
     if (g->laser_timer == LASER_WARN) {
-        for (int i = 0; i < NUM_SLOTS; i++)
-            if (slots[i].y == row_y[g->laser_row]) g->pegs[i] = g->armor[i] = 0;
+        for (int i = 0; i < g->nslots; i++) {
+            int dy = g->slot[i].y - g->laser_y;
+            if (dy >= -LASER_BAND && dy <= LASER_BAND) g->pegs[i] = g->armor[i] = 0;
+        }
         ev->laser = 1;
     }
-    if (g->laser_timer >= LASER_WARN + LASER_BEAM) g->laser_row = -1;
+    if (g->laser_timer >= LASER_WARN + LASER_BEAM) g->laser_y = -1;
 }
 
 int game_step(Game *g, Events *ev)
 {
     ev->pop = ev->gone = ev->wall = ev->spring = ev->item = ev->laser = ev->armor = 0;
-    for (int i = 0; i < NUM_SLOTS; i++) {
+    for (int i = 0; i < g->nslots; i++) {
         if (g->cooldown[i]) g->cooldown[i]--;
         if (g->flash[i]) g->flash[i]--;
     }
@@ -543,22 +612,29 @@ int game_step(Game *g, Events *ev)
 
 // ---------------------------------------------------------------- rounds
 
-// A restock fills every empty slot with a new peg worth 2^(round/4), and
-// any peg already showing that value swallows a copy of it and doubles.
+// A restock: pegs with the same number merge in pairs (one doubles, the
+// other leaves an empty slot), then every empty slot gets a new peg.
 static void restock(Game *g)
 {
-    int32_t v = new_peg_value(g);
-    for (int i = 0; i < NUM_SLOTS; i++) {
-        if (g->pegs[i] == v) g->pegs[i] *= 2;
-        else if (!g->pegs[i]) g->pegs[i] = v;
+    for (int i = 0; i < g->nslots; i++) {
+        if (!g->pegs[i]) continue;
+        for (int j = i + 1; j < g->nslots; j++)
+            if (g->pegs[j] == g->pegs[i]) {
+                g->pegs[i] *= 2;
+                g->pegs[j] = 0;
+                break;
+            }
     }
+    int32_t v = new_peg_value(g);
+    for (int i = 0; i < g->nslots; i++)
+        if (!g->pegs[i]) g->pegs[i] = v;
     g->coins++;
 }
 
 Result game_resolve(Game *g)
 {
     int left = 0;
-    for (int i = 0; i < NUM_SLOTS; i++) left += g->pegs[i] != 0;
+    for (int i = 0; i < g->nslots; i++) left += g->pegs[i] != 0;
     g->perfect = left == 0;
     if (g->perfect) g->score *= 2;           // popped every peg
 
@@ -569,17 +645,21 @@ Result game_resolve(Game *g)
         if (g->lives < g->max_lives) g->lives++;
         if (g->boss) g->coins += BOSS_BONUS;
         g->round++;
+        if ((g->round - 1) % LAYOUT_EVERY == 0) {           // a new layout every few rounds
+            int next = rand_below(g, NUM_LAYOUTS - 1);
+            game_set_layout(g, next >= g->layout ? next + 1 : next);
+        }
         begin_round(g);
         return RESULT_CLEARED;
     }
 
     g->restocks = 0;
     g->lives--;
-    for (int i = 0; i < NUM_SLOTS; i++) {
+    for (int i = 0; i < g->nslots; i++) {
         g->pegs[i] = g->round_start[i];
         g->armor[i] = g->armor_start[i];
     }
-    g->laser_row = -1;
+    g->laser_y = -1;
     return g->lives > 0 ? RESULT_RETRY : RESULT_GAME_OVER;
 }
 
@@ -691,8 +771,8 @@ int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
             x += vx / SUBSTEPS;
             y += vy / SUBSTEPS;
             walls(&x, &y, &vx, &vy, r);
-            for (int i = 0; i < NUM_SLOTS; i++) {
-                int32_t dx = x - FIX(slots[i].x), dy = y - FIX(slots[i].y);
+            for (int i = 0; i < g->nslots; i++) {
+                int32_t dx = x - FIX(g->slot[i].x), dy = y - FIX(g->slot[i].y);
                 if (g->pegs[i] && dx < reach && dx > -reach && dy < reach && dy > -reach &&
                     (uint32_t)(dx * dx + dy * dy) < (uint32_t)reach * (uint32_t)reach)
                     return count;                  // stop at the first peg

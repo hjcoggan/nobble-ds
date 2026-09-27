@@ -177,7 +177,7 @@ static void render_peg(int i, int32_t v)
     uint32_t buf[PEG_TILES * 8];
     for (int w = 0; w < PEG_TILES * 8; w++) buf[w] = obj_tiles[TILE_PEG * 8 + w];
     int d[8], n;
-    if (v < 100) {                              // big 5x7 digits
+    if (v < 1000) {                             // big 5x7 digits
         n = digits_of(v, d);
         int x0 = 16 - (n * 6 - 1) / 2;
         for (int g = 0; g < n; g++)
@@ -294,12 +294,12 @@ static int board_effects(void)
         int32_t was = prev_pegs[i], now = game.pegs[i];
         if (now < was) {
             if (game.flash[i] == FLASH_FRAMES) {           // popped
-                burst(slots[i].x, slots[i].y, PAL_TIER(tier(was)), now ? 4 : 9);
-                popup(slots[i].x, slots[i].y, was);
-                px = slots[i].x;
+                burst(game.slot[i].x, game.slot[i].y, PAL_TIER(tier(was)), now ? 4 : 9);
+                popup(game.slot[i].x, game.slot[i].y, was);
+                px = game.slot[i].x;
                 if (was >= 32) shake_timer = 4;
             } else if (!now) {                                // lasered away
-                burst(slots[i].x, slots[i].y, PAL_FX, 8);
+                burst(game.slot[i].x, game.slot[i].y, PAL_FX, 8);
             }
         }
         prev_pegs[i] = now;
@@ -458,15 +458,19 @@ static void board_sprites(void)
             spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NUBBY, 1);
     }
 
-    for (int i = 0; i < NUM_SLOTS; i++) {
+    for (int i = 0; i < game.nslots; i++) {
         int32_t v = game.pegs[i];
-        if (!v) continue;
+        if (!v) {                                  // an empty slot in this layout
+            spr(BOT, OBJ_PEG + i, game.slot[i].x - 16, game.slot[i].y - 16, SpriteSize_32x32, TILE_SOCKET,
+                PAL_ARMOR, 2);
+            continue;
+        }
         if (v != shown[i]) {
             render_peg(i, v);
             shown[i] = v;
         }
         int pal = game.flash[i] ? PAL_FLASH : game.armor[i] ? PAL_ARMOR : PAL_TIER(tier(v));
-        spr(BOT, OBJ_PEG + i, slots[i].x - 16, slots[i].y - 16, SpriteSize_32x32, PEG_TILE(i), pal, 1);
+        spr(BOT, OBJ_PEG + i, game.slot[i].x - 16, game.slot[i].y - 16, SpriteSize_32x32, PEG_TILE(i), pal, 1);
     }
 
     for (int k = 0; k < NUM_SPARKS; k++) {
@@ -487,11 +491,11 @@ static void board_sprites(void)
     }
 
     // boss hazards: the laser locks onto a row, blinks a warning, then fires
-    if (game.boss == BOSS_LASER && game.laser_row >= 0 && state == ST_FLY) {
+    if (game.boss == BOSS_LASER && game.laser_y >= 0 && state == ST_FLY) {
         int warn = game.laser_timer < LASER_WARN;
         if (!warn || (frames & 4))
             for (int k = 0; k < 8; k++)
-                spr(BOT, OBJ_FX + k, k * 32, game_row_y(game.laser_row) - 4, SpriteSize_32x8,
+                spr(BOT, OBJ_FX + k, k * 32, game.laser_y - 4, SpriteSize_32x8,
                     warn ? TILE_LASER_WARN : TILE_LASER, PAL_FX, warn ? 1 : 0);
     }
     if (game.boss == BOSS_WIND && (state == ST_AIM || state == ST_FLY || state == ST_BOSS)) {

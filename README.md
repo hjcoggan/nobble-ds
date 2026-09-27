@@ -41,9 +41,13 @@ rebuilt to use the extra hardware:
   You must reach it **in a single launch**. Miss and you lose a life and the
   board resets for another try.
 - Beat the quota and the board **restocks** once for every multiple of the
-  quota you scored: empty slots fill with new pegs, and pegs that match the
-  new value merge and double. Each restock pays a coin, and clearing a round
-  restores a life. New pegs get bigger every 4 rounds, and quotas rise.
+  quota you scored: pegs with the same number **merge in pairs** into one worth
+  double, then empty slots fill with new pegs. Each restock pays a coin, and
+  clearing a round restores a life. New pegs double in value every other
+  round, so the numbers climb into the hundreds and thousands.
+- The pegs sit in one of eight **layouts** (Classic, Diamond, Funnel, Columns,
+  Ring, Pyramid, Zigzag, Scatter), 13 to 19 pegs each, with a new layout every
+  3 rounds. Your biggest pegs move across to the new layout.
 - Pop every peg on the board for a **perfect**: the launch scores double.
 - Every 3 rounds there's a shop. You can hold up to **5 items**, and each
   one fires on its own trigger. With all 5, buying another lets you swap out

@@ -3,9 +3,9 @@
 //
 // Pegs hold powers of two. A hit scores the peg's value and halves it; a 1
 // disappears. Each round you must reach the quota in a single launch. Beat
-// it and the board restocks (once per multiple of the quota): empty slots
-// fill up and matching numbers merge into bigger ones. Miss it and you lose
-// a life and the board resets for another try.
+// it and the board restocks (once per multiple of the quota): pegs with the
+// same number merge in pairs into one worth double, then empty slots get new
+// pegs. Miss it and you lose a life and the board resets for another try.
 //
 // Items fire on a trigger (on launch, first pop, wall bounce, ...). Perks
 // force-trigger items: all of them, or ones picked at random, so the order
@@ -23,9 +23,9 @@
 #define LAUNCH_Y 22
 #define FLOOR_Y 180          // where SPRINGS bounces Nubby back up
 #define EXIT_Y 200           // Nubby is gone once it falls past this
-#define NUM_SLOTS 33         // six rows of 5 and 6 pegs
-#define CENTRE_SLOT 2        // top row, straight below the launcher
-#define PEG_R 9
+#define NUM_SLOTS 20         // most pegs any layout has
+#define NUM_LAYOUTS 8
+#define PEG_R 11
 #define NUBBY_R 5
 #define BIG_NUBBY_R 7
 
@@ -42,12 +42,20 @@
 #define FLASH_FRAMES 8
 #define BOSS_EVERY 5         // every 5th round is a boss round
 #define BOSS_BONUS 3         // extra coins for beating one
-#define NUM_ROWS 6           // peg rows, for the laser
 #define LASER_WARN 30        // frames of warning before the laser fires
 #define LASER_BEAM 12        // frames the beam stays on screen
 
 typedef struct { int16_t x, y; } Slot;
-extern const Slot slots[NUM_SLOTS];
+
+// Where the pegs sit. Each stretch of rounds uses one of these; the pegs
+// are spread out so Nubby can always fit between any two.
+typedef struct {
+    const char *name;
+    int n;
+    Slot pos[NUM_SLOTS];
+} Layout;
+
+extern const Layout layouts[NUM_LAYOUTS];
 
 // when an item fires
 enum {
@@ -143,7 +151,9 @@ typedef struct {
     int nperks;
     uint32_t rng;
 
-    // board: 0 = empty slot
+    // board: this layout's slots, 0 = empty
+    int layout, nslots;
+    Slot slot[NUM_SLOTS];
     int32_t pegs[NUM_SLOTS];
     int32_t round_start[NUM_SLOTS];     // restored after a failed launch
     uint8_t cooldown[NUM_SLOTS];        // frames before a peg can be hit again
@@ -165,7 +175,7 @@ typedef struct {
     int boss;
     uint8_t armor[NUM_SLOTS], armor_start[NUM_SLOTS];
     int wind;                           // -1 left, 1 right
-    int laser_row, laser_timer;         // row -1 when idle; timer counts the warning then the beam
+    int laser_y, laser_timer;           // -1 when idle; timer counts the warning then the beam
 
     int shop[SHOP_SLOTS];               // item ids, -1 once bought
     int perk_offer[PERK_CHOICES];
@@ -177,7 +187,7 @@ int game_has_perk(const Game *g, int perk);
 int game_radius(const Game *g);
 int game_potential(const Game *g);      // points left on the board
 int game_boss_for(int round);           // BOSS_NONE or the hazard for that round
-int game_row_y(int row);
+void game_set_layout(Game *g, int layout);   // move the pegs onto another layout
 
 void game_new_run(Game *g, uint32_t seed);
 void game_launch(Game *g, int angle);   // angle: 0 = straight down, +/- AIM_MAX

@@ -5,6 +5,19 @@ static int failures;
 
 #define FIX_TEST(v) ((v) * 256)
 
+// Tests that need known peg positions use the pyramid layout: slot 0 sits
+// straight below the launcher, 3 and 5 are either side of the third row.
+#define PYRAMID 5
+#define CENTRE 0
+#define LOW 3
+#define HIGH 5
+
+static void empty_pyramid(Game *g)
+{
+    game_set_layout(g, PYRAMID);
+    for (int i = 0; i < NUM_SLOTS; i++) g->pegs[i] = 0;
+}
+
 #define CHECK(cond) do { \
     if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); failures++; } \
 } while (0)
@@ -54,45 +67,60 @@ static void test_popping(void)
 {
     Game g;
     game_new_run(&g, 3);
-    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
-    g.pegs[CENTRE_SLOT] = 8;                                   // top centre peg, right below the launcher
+    empty_pyramid(&g);
+    g.pegs[CENTRE] = 8;                                   // top centre peg, right below the launcher
     Events ev;
     game_launch(&g, 0);
     while (!game_step(&g, &ev) && !ev.pop) {}
     CHECK(g.score == 8);
-    CHECK(g.pegs[CENTRE_SLOT] == 4);
+    CHECK(g.pegs[CENTRE] == 4);
 
-    g.pegs[CENTRE_SLOT] = 1;
+    g.pegs[CENTRE] = 1;
     game_launch(&g, 0);
     while (!game_step(&g, &ev) && !ev.pop) {}
-    CHECK(g.score == 1 && g.pegs[CENTRE_SLOT] == 0 && ev.gone);
+    CHECK(g.score == 1 && g.pegs[CENTRE] == 0 && ev.gone);
 }
 
 static void test_restock_and_merge(void)
 {
     Game g;
     game_new_run(&g, 5);
-    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
+    empty_pyramid(&g);
     g.pegs[0] = 1;
-    g.pegs[1] = 2;
+    g.pegs[1] = 1;
+    g.pegs[2] = 2;
+    g.pegs[3] = 4;
     g.quota = 10;
-    g.score = 25;                                     // 2 restocks
-    g.flying = 0;
+    g.score = 15;                                     // 1 restock
     int coins = g.coins;
     g.lives = 2;
     Result r = game_resolve(&g);
     CHECK(r == RESULT_CLEARED);
-    CHECK(g.restocks == 2);
-    CHECK(g.coins == coins + 2);
+    CHECK(g.restocks == 1);
+    CHECK(g.coins == coins + 1);
     CHECK(g.lives == 3);
     CHECK(g.round == 2);
-    // restock 1 fills the board with 1s and merges into the existing 1;
-    // restock 2 then turns every new 1 into a 2
-    int filled = 0;
-    for (int i = 0; i < NUM_SLOTS; i++) filled += g.pegs[i] != 0;
-    CHECK(filled == NUM_SLOTS);
-    for (int i = 0; i < NUM_SLOTS; i++) CHECK(g.pegs[i] == 2);
-    CHECK(g.quota == game_potential(&g) * 175 / 1000);
+    // the two 1s merge into a 2 and leave a gap; the 2 and the 4 have no
+    // partner; then every empty slot gets a new 1
+    CHECK(g.pegs[0] == 2 && g.pegs[1] == 1 && g.pegs[2] == 2 && g.pegs[3] == 4);
+    for (int i = 4; i < g.nslots; i++) CHECK(g.pegs[i] == 1);
+    int expect = game_potential(&g) * 175 / 1000;
+    CHECK(g.quota == (expect < 5 ? 5 : expect));
+
+    // many restocks keep merging, so numbers climb quickly
+    g.score = g.quota * 6;
+    game_resolve(&g);
+    int32_t big = 0;
+    for (int i = 0; i < g.nslots; i++)
+        if (g.pegs[i] > big) big = g.pegs[i];
+    CHECK(big >= 16);
+
+    // changing layout keeps the biggest pegs
+    game_set_layout(&g, 6);
+    int32_t big2 = 0;
+    for (int i = 0; i < g.nslots; i++)
+        if (g.pegs[i] > big2) big2 = g.pegs[i];
+    CHECK(big2 == big && g.nslots == layouts[6].n);
 }
 
 static void test_failed_launch_resets(void)
@@ -200,10 +228,10 @@ static Game board_with(uint32_t seed, int item)
 {
     Game g;
     game_new_run(&g, seed);
-    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
-    g.pegs[0] = 1;
-    g.pegs[3] = 8;
-    g.pegs[CENTRE_SLOT] = 2;                               // below the launcher
+    empty_pyramid(&g);
+    g.pegs[LOW] = 1;
+    g.pegs[HIGH] = 8;
+    g.pegs[CENTRE] = 2;                               // below the launcher
     if (item >= 0) g.items[g.nitems++] = (uint8_t)item;
     return g;
 }
@@ -219,7 +247,7 @@ static void test_items(void)
 {
     Game g = board_with(1, ITEM_PUMP);           // launch: double the lowest peg
     game_launch(&g, 0);
-    CHECK(g.pegs[0] == 2 && g.item_flash[0]);
+    CHECK(g.pegs[LOW] == 2 && g.item_flash[0]);
 
     g = board_with(2, ITEM_SEEDER);              // launch: add a peg
     int before = 0, after = 0;
@@ -230,7 +258,7 @@ static void test_items(void)
 
     g = board_with(3, ITEM_ZAPPER);              // first pop: pop the highest peg
     first_pop(&g);
-    CHECK(g.pegs[3] == 4);
+    CHECK(g.pegs[HIGH] == 4);
     CHECK(g.score == 2 + 8);
 
     g = board_with(4, ITEM_ENCORE);              // dies: +25% of the launch score
@@ -304,11 +332,12 @@ static void test_bosses(void)
     CHECK(game_boss_for(10) == BOSS_WIND && game_boss_for(15) == BOSS_ARMOR);
     CHECK(game_boss_for(20) == BOSS_LASER);
 
-    // laser: wipes a whole row, scoring nothing, and the board comes back after a miss
+    // laser: wipes out a band of pegs, scoring nothing, and the board comes back after a miss
     Game g;
     game_new_run(&g, 21);
+    game_set_layout(&g, PYRAMID);
     g.round = 5;
-    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 1;
+    for (int i = 0; i < g.nslots; i++) g.pegs[i] = 1;
     g.boss = BOSS_LASER;
     g.lives = 3;
     g.score = 0;
@@ -322,16 +351,16 @@ static void test_bosses(void)
     CHECK(fired && empty >= 3);
     g.quota = 1000;
     game_resolve(&g);
-    for (int i = 0; i < NUM_SLOTS; i++) CHECK(g.pegs[i] == 1);
+    for (int i = 0; i < g.nslots; i++) CHECK(g.pegs[i] == 1);
 
     // armour: the first hit cracks it and scores nothing
     game_new_run(&g, 22);
-    for (int i = 0; i < NUM_SLOTS; i++) g.pegs[i] = 0;
-    g.pegs[CENTRE_SLOT] = 4;
-    g.armor[CENTRE_SLOT] = 1;
+    empty_pyramid(&g);
+    g.pegs[CENTRE] = 4;
+    g.armor[CENTRE] = 1;
     game_launch(&g, 0);
     while (!game_step(&g, &ev) && !ev.armor) {}
-    CHECK(g.armor[CENTRE_SLOT] == 0 && g.pegs[CENTRE_SLOT] == 4 && g.score == 0);
+    CHECK(g.armor[CENTRE] == 0 && g.pegs[CENTRE] == 4 && g.score == 0);
 
     // wind drifts a straight-down launch sideways
     game_new_run(&g, 23);

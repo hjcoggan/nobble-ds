@@ -17,21 +17,22 @@
 #define TILE_NUBBY_BIG 8
 #define TILE_NUBBY_BIG_BLINK 12
 #define TILE_PEG 16           // 32x32 disc template
-#define TILE_DOT 32
-#define TILE_SPARK 36
-#define TILE_LASER_WARN 40  // 32x8
-#define TILE_LASER 44        // 32x8
-#define TILE_WIND 48          // 16x8
-#define TILE_PAUSE 52
-#define TILE_ICON(i) (56 + (i) * 4)
-#define TILE_PERK(i) (100 + (i) * 4)
-#define TILE_BIGICON(i) (132 + (i) * 16)
-#define TILE_BIGPERK(i) (308 + (i) * 16)
-#define TILE_FACE(f) (436 + (f) * 64)   // 64x64: happy, blink, wow, worry
-#define TILE_HEART 692
-#define TILE_HEART_EMPTY 696
-#define TILE_COIN 700
-#define TILE_FREE 704        // first unused sprite tile
+#define TILE_SOCKET 32     // 32x32 ring for an empty slot
+#define TILE_DOT 48
+#define TILE_SPARK 52
+#define TILE_LASER_WARN 56  // 32x8
+#define TILE_LASER 60        // 32x8
+#define TILE_WIND 64          // 16x8
+#define TILE_PAUSE 68
+#define TILE_ICON(i) (72 + (i) * 4)
+#define TILE_PERK(i) (116 + (i) * 4)
+#define TILE_BIGICON(i) (148 + (i) * 16)
+#define TILE_BIGPERK(i) (324 + (i) * 16)
+#define TILE_FACE(f) (452 + (f) * 64)   // 64x64: happy, blink, wow, worry
+#define TILE_HEART 708
+#define TILE_HEART_EMPTY 712
+#define TILE_COIN 716
+#define TILE_FREE 720        // first unused sprite tile
 #define PEG_TILES 16
 #define POPUP_TILES 8
 #define NUM_POPUPS 6
@@ -47,7 +48,7 @@
 
 extern const uint16_t font_pal[16];
 extern const uint16_t obj_pal[256];
-extern const uint32_t obj_tiles[5632];
+extern const uint32_t obj_tiles[5760];
 extern const uint32_t font_tiles[2832];
 extern const uint8_t glyphs5x7[10][7];                // digit bitmaps, bit 4 = left column
 
