@@ -81,6 +81,15 @@ enum {
     ITEM_CHAIN,     // every 8 pops: double a random peg
     ITEM_BIG,       // passive: Nobble is bigger
     ITEM_HEART,     // passive: +1 life now and +1 to the life cap
+    ITEM_MERGER,    // launch: merge the biggest matching pair of pegs
+    ITEM_SPAWNER,   // peg gone: 1 in 3 chance to add a new peg
+    ITEM_SURGE,     // every 8 pops: pop 2 random pegs
+    ITEM_SNIPER,    // wall bounce: every third one pops the biggest peg
+    ITEM_ALCHEMY,   // peg gone: double the lowest peg
+    ITEM_PAYROLL,   // passive: restocks pay 2 coins
+    ITEM_OVERTIME,  // passive: +1 restock when you beat the goal
+    ITEM_SHIELD,    // passive: the first miss each round costs no life
+    ITEM_SCOPE,     // passive: a longer aim guide
     NUM_ITEMS
 };
 
@@ -93,6 +102,13 @@ enum {
     PERK_PAYDAY,    // passing the goal: trigger all items
     PERK_JACKPOT,  // first pop on the biggest peg: 3 random items
     PERK_DOMINO,     // 15 pegs popped: trigger all items
+    PERK_SPARK,     // on launch: trigger 2 random items
+    PERK_FLURRY,    // every 5 pegs popped: trigger a random item
+    PERK_PRISM,     // peg gone: 1 in 3 chance to trigger a random item
+    PERK_CASHBACK,  // peg gone: 1 in 5 chance of a coin
+    PERK_WHALE,     // hitting a peg worth 64 or more: trigger a random item
+    PERK_ECHO,      // an item fires: 1 in 4 chance it fires again
+    PERK_FINALE,    // Nobble falls out: trigger all items
     NUM_PERKS
 };
 
@@ -117,11 +133,13 @@ typedef struct {
     const char *effect;
     uint8_t trigger;
     uint8_t price;
+    uint8_t from_round;     // first round it can turn up in the shop (0 = any)
 } ItemInfo;
 
 typedef struct {
     const char *name;
     const char *line1, *line2;
+    uint8_t from_round;     // first round it can be offered (0 = any)
 } PerkInfo;
 
 extern const ItemInfo item_info[NUM_ITEMS];
@@ -164,7 +182,8 @@ typedef struct {
     // current launch (positions and velocities are 8.8 fixed point)
     int flying;
     int32_t x, y, vx, vy;
-    int score, hits, frames, still, spring_used, ricochets, passed_goal;
+    int score, hits, frames, still, spring_used, ricochets, passed_goal, wall_hits;
+    int shield_used, shielded;          // Shield: used this round, and saved the last launch
     int depth;                          // guards items triggering each other forever
     Events *ev;
 
@@ -208,6 +227,9 @@ void game_take_perk(Game *g, int choice);
 // The aim angle that points the launcher at screen position (x, y), clamped
 // to +/- AIM_MAX. Used for touch aiming.
 int game_aim_at(int x, int y);
+
+// How many aim guide dots to show (Scope makes it longer).
+int game_guide_dots(const Game *g, int normal);
 
 // Up to n points along the first part of a launch, for the aim guide.
 int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n);

@@ -61,7 +61,8 @@ rebuilt to use the extra hardware:
   Ring, Pyramid, Zigzag, Scatter), 13 to 19 pegs each, with a new layout every
   3 rounds. Your biggest pegs move across to the new layout.
 - Pop every peg on the board for a **perfect**: the launch scores double.
-- Every 3 rounds there's a shop. You can hold up to **5 items**, and each
+- Every 3 rounds there's a shop, and stronger items start turning up in
+  later rounds. You can hold up to **5 items**, and each
   one fires on its own trigger. With all 5, buying another lets you swap out
   one you already have, and you get half its price back:
 
@@ -78,8 +79,18 @@ rebuilt to use the extra hardware:
 | Chain | Every 8 pegs popped | Double a random peg | 5 |
 | Big | Always | Nobble is bigger | 6 |
 | Heart | Always | +1 life and +1 to your maximum | 7 |
+| Merger | On launch | Merge the biggest matching pair of pegs | 6 |
+| Spawner | Peg popped away | 1 in 3 chance: add a new peg | 5 |
+| Payroll | Always | Restocks pay 2 coins instead of 1 | 6 |
+| Scope | Always | A longer aim guide | 4 |
+| Surge | Every 8 pegs popped | Pop 2 random pegs *(from round 4)* | 6 |
+| Sniper | Wall bounce | Every third bounce pops the biggest peg *(from round 4)* | 6 |
+| Alchemy | Peg popped away | Double the lowest peg *(from round 4)* | 6 |
+| Overtime | Always | One extra restock when you beat the goal *(from round 7)* | 8 |
+| Shield | Always | Your first miss each round costs no life *(from round 7)* | 9 |
 
-- Every 5 rounds you choose one of two **perks** (up to 4). Perks force items
+- Every 5 rounds you choose one of two **perks** (up to 4), with rarer ones
+  from round 10. Perks force items
   to fire, and an icon flashes whenever an item or perk goes off:
 
 | Perk | When | What it triggers |
@@ -92,6 +103,13 @@ rebuilt to use the extra hardware:
 | Payday | Passing the goal | All items |
 | Jackpot | First pop is the biggest peg | 3 random items |
 | Domino | 15 pegs popped | All items |
+| Spark | On launch | 2 random items |
+| Flurry | Every 5 pegs popped | A random item |
+| Prism | Peg popped away | 1 in 3 chance: a random item |
+| Cashback | Peg popped away | 1 in 5 chance: +1 coin |
+| Whale | Hitting a peg worth 64 or more | A random item *(from round 10)* |
+| Echo | An item fires | 1 in 4 chance it fires again *(from round 10)* |
+| Finale | Nobble falls out | All items *(from round 15)* |
 
 - Every 5th round is a **boss round** with a hazard on the board. Beat it for
   3 bonus coins:

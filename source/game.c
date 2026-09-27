@@ -79,28 +79,44 @@ const char *const trigger_text[NUM_TRIGGERS] = {
 };
 
 const ItemInfo item_info[NUM_ITEMS] = {
-    [ITEM_SPRINGS]  = { "SPRINGS",  "BOUNCE BACK UP ONCE",   TRIG_DIES,      6 },
-    [ITEM_SEEDER]   = { "SEEDER",   "ADD A PEG",             TRIG_LAUNCH,    4 },
-    [ITEM_PUMP]     = { "PUMP",     "DOUBLE THE LOWEST PEG", TRIG_LAUNCH,    5 },
-    [ITEM_ZAPPER]   = { "ZAPPER",   "POP THE HIGHEST PEG",   TRIG_FIRST_POP, 5 },
-    [ITEM_DOUBLER]  = { "DOUBLER",  "DOUBLE A RANDOM PEG",   TRIG_FIRST_POP, 5 },
-    [ITEM_RICOCHET] = { "RICOCHET", "POP A RANDOM PEG",      TRIG_WALL,      6 },
-    [ITEM_PIGGY]    = { "PIGGY",    "1 IN 4 CHANCE: +1 COIN", TRIG_PEG_GONE, 4 },
-    [ITEM_ENCORE]   = { "ENCORE",   "+25% OF LAUNCH SCORE",  TRIG_DIES,      6 },
-    [ITEM_CHAIN]    = { "CHAIN",    "DOUBLE A RANDOM PEG",   TRIG_EVERY_8,   5 },
-    [ITEM_BIG]      = { "BIG",      "NOBBLE IS BIGGER",       TRIG_PASSIVE,   6 },
-    [ITEM_HEART]    = { "HEART",    "+1 LIFE AND MAX LIVES", TRIG_PASSIVE,   7 },
+    [ITEM_SPRINGS]  = { "SPRINGS",  "BOUNCE BACK UP ONCE",   TRIG_DIES,      6, 0 },
+    [ITEM_SEEDER]   = { "SEEDER",   "ADD A PEG",             TRIG_LAUNCH,    4, 0 },
+    [ITEM_PUMP]     = { "PUMP",     "DOUBLE THE LOWEST PEG", TRIG_LAUNCH,    5, 0 },
+    [ITEM_ZAPPER]   = { "ZAPPER",   "POP THE HIGHEST PEG",   TRIG_FIRST_POP, 5, 0 },
+    [ITEM_DOUBLER]  = { "DOUBLER",  "DOUBLE A RANDOM PEG",   TRIG_FIRST_POP, 5, 0 },
+    [ITEM_RICOCHET] = { "RICOCHET", "POP A RANDOM PEG",      TRIG_WALL,      6, 0 },
+    [ITEM_PIGGY]    = { "PIGGY",    "1 IN 4 CHANCE: +1 COIN", TRIG_PEG_GONE, 4, 0 },
+    [ITEM_ENCORE]   = { "ENCORE",   "+25% OF LAUNCH SCORE",  TRIG_DIES,      6, 0 },
+    [ITEM_CHAIN]    = { "CHAIN",    "DOUBLE A RANDOM PEG",   TRIG_EVERY_8,   5, 0 },
+    [ITEM_BIG]      = { "BIG",      "NOBBLE IS BIGGER",       TRIG_PASSIVE,   6, 0 },
+    [ITEM_HEART]    = { "HEART",    "+1 LIFE AND MAX LIVES", TRIG_PASSIVE,   7, 0 },
+    [ITEM_MERGER]   = { "MERGER",   "MERGE A MATCHING PAIR", TRIG_LAUNCH,    6, 0 },
+    [ITEM_SPAWNER]  = { "SPAWNER",  "1 IN 3: ADD A NEW PEG", TRIG_PEG_GONE,  5, 0 },
+    [ITEM_SURGE]    = { "SURGE",    "POP 2 RANDOM PEGS",     TRIG_EVERY_8,   6, 4 },
+    [ITEM_SNIPER]   = { "SNIPER",   "EVERY 3RD: POP THE TOP", TRIG_WALL,     6, 4 },
+    [ITEM_ALCHEMY]  = { "ALCHEMY",  "DOUBLE THE LOWEST PEG", TRIG_PEG_GONE,  6, 4 },
+    [ITEM_PAYROLL]  = { "PAYROLL",  "RESTOCKS PAY 2 COINS",  TRIG_PASSIVE,   6, 0 },
+    [ITEM_OVERTIME] = { "OVERTIME", "+1 RESTOCK ON A WIN",   TRIG_PASSIVE,   8, 7 },
+    [ITEM_SHIELD]   = { "SHIELD",   "A FREE MISS EACH ROUND", TRIG_PASSIVE,  9, 7 },
+    [ITEM_SCOPE]    = { "SCOPE",    "A LONGER AIM GUIDE",    TRIG_PASSIVE,   4, 0 },
 };
 
 const PerkInfo perk_info[NUM_PERKS] = {
-    [PERK_CONVEYOR]   = { "CONVEYOR", "EVERY 3 SECONDS:",      "TRIGGER ALL ITEMS" },
-    [PERK_GREMLIN]  = { "GREMLIN",  "EVERY SECOND:",         "TRIGGER A RANDOM ITEM" },
-    [PERK_IGNITION]   = { "IGNITION", "FIRST PEG POPPED:",     "TRIGGER 2 RANDOM ITEMS" },
-    [PERK_RECYCLER]    = { "RECYCLER", "NOBBLE FALLS OUT: 50%",  "TRIGGER A RANDOM ITEM" },
-    [PERK_BUMPER]  = { "BUMPER",   "WALL BOUNCE: 1 IN 4",   "TRIGGER A RANDOM ITEM" },
-    [PERK_PAYDAY]   = { "PAYDAY",   "PASSING THE GOAL:",     "TRIGGER ALL ITEMS" },
-    [PERK_JACKPOT] = { "JACKPOT",  "FIRST POP IS THE TOP",  "PEG: 3 RANDOM ITEMS" },
-    [PERK_DOMINO]    = { "DOMINO",   "15 PEGS POPPED:",       "TRIGGER ALL ITEMS" },
+    [PERK_CONVEYOR] = { "CONVEYOR", "EVERY 3 SECONDS:",      "TRIGGER ALL ITEMS", 0 },
+    [PERK_GREMLIN]  = { "GREMLIN",  "EVERY SECOND:",         "TRIGGER A RANDOM ITEM", 0 },
+    [PERK_IGNITION] = { "IGNITION", "FIRST PEG POPPED:",     "TRIGGER 2 RANDOM ITEMS", 0 },
+    [PERK_RECYCLER] = { "RECYCLER", "NOBBLE FALLS OUT: 50%",  "TRIGGER A RANDOM ITEM", 0 },
+    [PERK_BUMPER]   = { "BUMPER",   "WALL BOUNCE: 1 IN 4",   "TRIGGER A RANDOM ITEM", 0 },
+    [PERK_PAYDAY]   = { "PAYDAY",   "PASSING THE GOAL:",     "TRIGGER ALL ITEMS", 0 },
+    [PERK_JACKPOT]  = { "JACKPOT",  "FIRST POP IS THE TOP",  "PEG: 3 RANDOM ITEMS", 0 },
+    [PERK_DOMINO]   = { "DOMINO",   "15 PEGS POPPED:",       "TRIGGER ALL ITEMS", 0 },
+    [PERK_SPARK]    = { "SPARK",    "ON LAUNCH:",            "TRIGGER 2 RANDOM ITEMS", 0 },
+    [PERK_FLURRY]   = { "FLURRY",   "EVERY 5 PEGS POPPED:",  "TRIGGER A RANDOM ITEM", 0 },
+    [PERK_PRISM]    = { "PRISM",    "PEG POPPED AWAY: 1 IN 3", "TRIGGER A RANDOM ITEM", 0 },
+    [PERK_CASHBACK] = { "CASHBACK", "PEG POPPED AWAY: 1 IN 5", "+1 COIN", 0 },
+    [PERK_WHALE]    = { "WHALE",    "HIT A PEG WORTH 64+:",  "TRIGGER A RANDOM ITEM", 10 },
+    [PERK_ECHO]     = { "ECHO",     "AN ITEM FIRES: 1 IN 4", "IT FIRES AGAIN", 10 },
+    [PERK_FINALE]   = { "FINALE",   "NOBBLE FALLS OUT:",     "TRIGGER ALL ITEMS", 15 },
 };
 
 // sin for angles 0..64 (a quarter turn), 8.8
@@ -200,6 +216,7 @@ static void begin_round(Game *g)
     g->wind = rand_below(g, 2) ? 1 : -1;
     g->laser_y = -1;
     g->laser_timer = 0;
+    g->shield_used = 0;
     g->quota = quota_for(g);
     g->score = 0;
 }
@@ -261,7 +278,8 @@ void game_new_run(Game *g, uint32_t seed)
 // ---------------------------------------------------------------- items and perks
 
 static void fire(Game *g, int trigger);
-static void trigger_all(Game *g, int perk);
+static void flash_perk(Game *g, int perk);
+static void trigger_random(Game *g, int n, int perk);
 static void trigger_all(Game *g, int perk);
 
 static int pick_peg(Game *g, int want)   // want: 0 random, 1 lowest, 2 highest
@@ -309,8 +327,16 @@ static int pop_peg(Game *g, int i)
     }
     check_goal(g);
     if (g->hits % 8 == 0) fire(g, TRIG_EVERY_8);
+    if (g->hits % 5 == 0 && game_has_perk(g, PERK_FLURRY)) trigger_random(g, 1, PERK_FLURRY);
     if (g->hits == 15 && game_has_perk(g, PERK_DOMINO)) trigger_all(g, PERK_DOMINO);
-    if (!g->pegs[i]) fire(g, TRIG_PEG_GONE);
+    if (!g->pegs[i]) {
+        fire(g, TRIG_PEG_GONE);
+        if (game_has_perk(g, PERK_PRISM) && rand_below(g, 3) == 0) trigger_random(g, 1, PERK_PRISM);
+        if (game_has_perk(g, PERK_CASHBACK) && rand_below(g, 5) == 0) {
+            flash_perk(g, PERK_CASHBACK);
+            g->coins++;
+        }
+    }
     return g->pegs[i] == 0;
 }
 
@@ -374,8 +400,56 @@ static void run_item(Game *g, int slot)
         g->score += (g->score + 3) / 4;     // rounded up, so small scores still grow
         check_goal(g);
         break;
+    case ITEM_MERGER: {                 // the biggest value that appears twice merges
+        int a = -1, b = -1;
+        for (int k = 0; k < g->nslots; k++)
+            for (int j = k + 1; j < g->nslots && g->pegs[k]; j++)
+                if (g->pegs[j] == g->pegs[k] && (a < 0 || g->pegs[k] > g->pegs[a])) {
+                    a = k;
+                    b = j;
+                }
+        if (a >= 0) {
+            g->pegs[a] *= 2;
+            g->pegs[b] = 0;
+            g->armor[b] = 0;
+            g->flash[a] = FLASH_FRAMES;
+        }
+        break;
+    }
+    case ITEM_SPAWNER:
+        if (rand_below(g, 3) == 0) {
+            int empty = -1, n = 0;
+            for (int k = 0; k < g->nslots; k++)
+                if (!g->pegs[k] && rand_below(g, ++n) == 0) empty = k;
+            if (empty >= 0) {
+                g->pegs[empty] = new_peg_value(g);
+                g->flash[empty] = FLASH_FRAMES;
+                g->cooldown[empty] = PEG_COOLDOWN;
+            }
+        }
+        break;
+    case ITEM_SURGE:
+        for (int k = 0; k < 2; k++)
+            if (g->ricochets < MAX_RICOCHETS && (i = pick_peg(g, 0)) >= 0) {
+                g->ricochets++;
+                pop_peg(g, i);
+            }
+        break;
+    case ITEM_SNIPER:
+        if (++g->wall_hits % 3 == 0 && (i = pick_peg(g, 2)) >= 0) pop_peg(g, i);
+        break;
+    case ITEM_ALCHEMY:
+        if ((i = pick_peg(g, 1)) >= 0) {
+            g->pegs[i] *= 2;
+            g->flash[i] = FLASH_FRAMES;
+        }
+        break;
     default:                            // passive items do nothing when triggered
         break;
+    }
+    if (game_has_perk(g, PERK_ECHO) && rand_below(g, 4) == 0) {
+        flash_perk(g, PERK_ECHO);
+        run_item(g, slot);              // the depth guard stops it echoing forever
     }
     g->depth--;
 }
@@ -437,7 +511,9 @@ void game_launch(Game *g, int angle)
     g->ricochets = g->passed_goal = 0;
     g->laser_y = -1;
     g->flying = 1;
+    g->wall_hits = 0;
     fire(g, TRIG_LAUNCH);
+    if (game_has_perk(g, PERK_SPARK)) trigger_random(g, 2, PERK_SPARK);
 }
 
 // Bounce Nobble off a peg at (cx, cy). Returns 1 on contact.
@@ -482,7 +558,9 @@ static void hit_peg(Game *g, int i)
     }
     int first = g->hits == 0;
     int was_top = g->pegs[i] == highest_value(g);
+    int whale = g->pegs[i] >= 64;
     pop_peg(g, i);
+    if (whale && game_has_perk(g, PERK_WHALE)) trigger_random(g, 1, PERK_WHALE);
     if (!first) return;
     fire(g, TRIG_FIRST_POP);
     if (game_has_perk(g, PERK_IGNITION)) trigger_random(g, 2, PERK_IGNITION);
@@ -601,6 +679,7 @@ int game_step(Game *g, Events *ev)
     if (g->y > FIX(EXIT_Y) || g->frames > LAUNCH_TIMEOUT) {
         fire(g, TRIG_DIES);
         if (game_has_perk(g, PERK_RECYCLER) && rand_below(g, 2) == 0) trigger_random(g, 1, PERK_RECYCLER);
+        if (game_has_perk(g, PERK_FINALE)) trigger_all(g, PERK_FINALE);
         // springs can pull Nobble back from the brink
         out = g->y > FIX(FLOOR_Y) || g->frames > LAUNCH_TIMEOUT;
         if (out) g->flying = 0;
@@ -628,7 +707,7 @@ static void restock(Game *g)
     int32_t v = new_peg_value(g);
     for (int i = 0; i < g->nslots; i++)
         if (!g->pegs[i]) g->pegs[i] = v;
-    g->coins++;
+    g->coins += game_has(g, ITEM_PAYROLL) ? 2 : 1;
 }
 
 Result game_resolve(Game *g)
@@ -636,10 +715,11 @@ Result game_resolve(Game *g)
     int left = 0;
     for (int i = 0; i < g->nslots; i++) left += g->pegs[i] != 0;
     g->perfect = left == 0;
+    g->shielded = 0;
     if (g->perfect) g->score *= 2;           // popped every peg
 
     if (g->score >= g->quota) {
-        g->restocks = g->score / g->quota;
+        g->restocks = g->score / g->quota + game_has(g, ITEM_OVERTIME);
         if (g->restocks > MAX_RESTOCKS) g->restocks = MAX_RESTOCKS;
         for (int k = 0; k < g->restocks; k++) restock(g);
         if (g->lives < g->max_lives) g->lives++;
@@ -654,7 +734,9 @@ Result game_resolve(Game *g)
     }
 
     g->restocks = 0;
-    g->lives--;
+    g->shielded = game_has(g, ITEM_SHIELD) && !g->shield_used;
+    if (g->shielded) g->shield_used = 1;    // the shield takes this miss
+    else g->lives--;
     for (int i = 0; i < g->nslots; i++) {
         g->pegs[i] = g->round_start[i];
         g->armor[i] = g->armor_start[i];
@@ -671,7 +753,7 @@ void game_roll_shop(Game *g)
 {
     int pool[NUM_ITEMS], n = 0;
     for (int i = 0; i < NUM_ITEMS; i++)
-        if (!game_has(g, i)) pool[n++] = i;
+        if (!game_has(g, i) && g->round >= item_info[i].from_round) pool[n++] = i;
     for (int s = 0; s < SHOP_SLOTS; s++) {
         if (n == 0) {
             g->shop[s] = -1;
@@ -724,7 +806,7 @@ void game_roll_perks(Game *g)
 {
     int pool[NUM_PERKS], n = 0;
     for (int p = 0; p < NUM_PERKS; p++)
-        if (!game_has_perk(g, p)) pool[n++] = p;
+        if (!game_has_perk(g, p) && g->round >= perk_info[p].from_round) pool[n++] = p;
     for (int c = 0; c < PERK_CHOICES; c++) {
         int k = rand_below(g, n);
         g->perk_offer[c] = pool[k];
@@ -756,6 +838,8 @@ int game_aim_at(int x, int y)
     return best;
 }
 
+int game_guide_dots(const Game *g, int normal) { return game_has(g, ITEM_SCOPE) ? normal * 2 : normal; }
+
 int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
 {
     int r = game_radius(g);
@@ -763,7 +847,7 @@ int game_predict(const Game *g, int angle, int16_t *xs, int16_t *ys, int n)
     int32_t vx = isin(angle) * LAUNCH_SPEED / 256, vy = icos(angle) * LAUNCH_SPEED / 256;
     int32_t reach = FIX(r + PEG_R);
     int count = 0;
-    for (int f = 1; f <= 60 && count < n; f++) {
+    for (int f = 1; f <= 4 * n + 4 && count < n; f++) {
         for (int s = 0; s < SUBSTEPS; s++) {
             vy += GRAVITY / SUBSTEPS;
             if (g->boss == BOSS_WIND) vx += g->wind * WIND_PUSH / SUBSTEPS;

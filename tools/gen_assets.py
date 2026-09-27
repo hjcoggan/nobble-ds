@@ -601,6 +601,15 @@ ICONS = [   # items, in game.h order: (colour, 5x7 symbol)
     ("purple", GLYPHS["8"]),                                      # chain
     ("orange", ".###. #...# #...# #...# #...# #...# .###."),        # big
     ("pink", "..... .#.#. ##### ##### .###. ..#.. ....."),          # heart
+    ("blue", "..... ##### ..... ..... ##### ..... ....."),          # merger: =
+    ("green", "#...# ..#.. .###. ##### .###. ..#.. #...#"),          # spawner: burst
+    ("gold", "..#.. .##.. ##### .##.# ..#.# ...## ..#.."),           # surge
+    ("orange", "..#.. .###. #.#.# ##### #.#.# .###. ..#.."),         # sniper: crosshair
+    ("purple", "..#.. ..#.. .#.#. .#.#. #...# #...# #####"),         # alchemy: flask
+    ("gold", "..#.. .#### #.#.. .###. ..#.# ####. ..#.."),           # payroll: $
+    ("pink", ".###. #.#.# #.#.# #.### #...# #...# .###."),           # overtime: clock
+    ("gray", "##### #...# #...# #...# .#.#. ..#.. ....."),           # shield
+    ("green", ".###. #...# #.#.# #...# .###. ..... ....."),          # scope
 ]
 PERK_ICONS = [   # perks, in game.h order
     ("gold", GLYPHS["C"]),                                        # conveyor
@@ -611,6 +620,13 @@ PERK_ICONS = [   # perks, in game.h order
     ("gold", GLYPHS["P"]),                                        # payday
     ("gray", GLYPHS["J"]),                                        # jackpot
     ("green", GLYPHS["D"]),                                       # domino
+    ("orange", "..#.. ..#.. .###. ##### .###. ..#.. ..#.."),         # spark
+    ("blue", GLYPHS["F"]),                                        # flurry
+    ("purple", "..#.. .###. .###. ##### ##### ##### ....."),         # prism
+    ("gold", "..#.. .#### #.#.. .###. ..#.# ####. ..#.."),           # cashback: $
+    ("blue", GLYPHS["W"]),                                        # whale
+    ("pink", GLYPHS["E"]),                                        # echo
+    ("gold", GLYPHS["!"]),                                        # finale
 ]
 
 
@@ -1204,9 +1220,9 @@ sheet = [[(0, 0, 0)] * 64 for _ in range(64)]
 GAME_C = open(os.path.join(ROOT, "source", "game.c")).read()
 MAIN_C = open(os.path.join(ROOT, "source", "main.c")).read()
 ITEMS = [dict(name=m[0], effect=m[1], trig=m[2], price=int(m[3])) for m in re.findall(
-    r'\[ITEM_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*(TRIG_\w+),\s*(\d+)\s*\}', GAME_C)]
+    r'\[ITEM_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*(TRIG_\w+),\s*(\d+)\s*(?:,\s*\d+\s*)?\}', GAME_C)]
 PERKS = [dict(name=m[0], line1=m[1], line2=m[2]) for m in re.findall(
-    r'\[PERK_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\s*\}', GAME_C)]
+    r'\[PERK_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"\s*(?:,\s*\d+\s*)?\}', GAME_C)]
 TRIGGERS = re.findall(r'\[(TRIG_\w+)\]\s*=\s*"([^"]*)"', GAME_C)
 TRIG_INDEX = {name: i for i, (name, _) in enumerate(TRIGGERS)}
 BOSSES = re.findall(r'\[BOSS_\w+\]\s*=\s*\{\s*"([^"]*)",\s*"([^"]*)",\s*"([^"]*)"', GAME_C)
@@ -1222,6 +1238,7 @@ def c_strings(name, src):
 TRIGGER_SHORT = c_strings("trigger_short", MAIN_C)
 PERK_SHORT = c_strings("perk_short", MAIN_C)
 ITEM_ID = {it["name"]: i for i, it in enumerate(ITEMS)}
+assert len(ITEMS) == len(ICONS) and len(PERKS) == len(PERK_ICONS), "icons out of step with game.c"
 PERK_ID = {pk["name"]: i for i, pk in enumerate(PERKS)}
 
 
@@ -1559,8 +1576,8 @@ save_ds("shot_aim.png", dashboard(st), board(dict(layout="PYRAMID", pegs=PYR, ai
 # --- mid-launch: pops throw sparks and scores, the goal bar fills, Nobble cheers
 DIA = [32, 16, 64, 8, 32, 16, 128, 0, 64, 8, 32, 16, 256, 32, 16, 64]
 st = dict(round=9, coins=12, lives=3, max_lives=4, score=688, goal=412, flying=True, face="wow",
-          items=["SEEDER", "ZAPPER", "RICOCHET", "CHAIN", "HEART"], flash=("RICOCHET",),
-          perks=["BUMPER", "PAYDAY"], shop_in=1)
+          items=["MERGER", "ZAPPER", "SNIPER", "CHAIN", "SHIELD"], flash=("SNIPER",),
+          perks=["FLURRY", "WHALE"], shop_in=1)
 sparks = [(106, 102, 64, None), (96, 94, 64, None), (116, 96, 64, None), (100, 112, 64, None), (114, 110, 64, None),
           (60, 98, 16, None), (68, 108, 16, None)]
 save_ds("shot_launch.png", dashboard(st),
@@ -1569,12 +1586,12 @@ save_ds("shot_launch.png", dashboard(st),
 
 # --- the shop: cards on the touch screen, details on top
 st = dict(round=7, coins=9, lives=3, max_lives=3, score=0, goal=1, items=["ZAPPER", "RICOCHET", "ENCORE"],
-          perks=["CONVEYOR", "IGNITION"], detail=("item", "DOUBLER", "TAP AGAIN TO BUY"))
+          perks=["CONVEYOR", "IGNITION"], detail=("item", "OVERTIME", "TAP AGAIN TO BUY"))
 bot = Screen(BITMAPS["board0"])
 bot.dim = 12
 bot.center(1, "SHOP", GOLD_S)
 bot.center(2, "COINS 9   ITEMS 3/5", GOLD_S)
-for s_, (name, on) in enumerate((("SPRINGS", 0), ("DOUBLER", 1), ("HEART", 0))):
+for s_, (name, on) in enumerate((("SURGE", 0), ("OVERTIME", 1), ("SCOPE", 0))):
     it = ITEMS[ITEM_ID[name]]
     row = 4 + s_ * 5
     bot.panel(1, row, 30, 5)
@@ -1605,8 +1622,8 @@ save_ds("shot_armor.png", dashboard(st),
 
 # --- the items and perks screen from the pause menu
 st = dict(round=12, coins=14, lives=3, max_lives=3, score=0, goal=1,
-          items=["SEEDER", "ZAPPER", "RICOCHET", "CHAIN"], perks=["CONVEYOR", "PAYDAY"],
-          detail=("perk", "PAYDAY", ""))
+          items=["SPAWNER", "ZAPPER", "RICOCHET", "PAYROLL"], perks=["CONVEYOR", "ECHO"],
+          detail=("perk", "ECHO", ""))
 bot = Screen(BITMAPS["board1"])
 bot.dim = 12
 bot.center(1, "ITEMS AND PERKS", GOLD_S)

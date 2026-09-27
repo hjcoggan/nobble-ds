@@ -305,6 +305,69 @@ static void test_perks(void)
     CHECK(g.nperks == 1 && g.perks[0] == g.perk_offer[1]);
 }
 
+static void test_new_items(void)
+{
+    // merger: on launch the biggest matching pair merges
+    Game g;
+    game_new_run(&g, 31);
+    empty_pyramid(&g);
+    g.pegs[3] = 8;
+    g.pegs[5] = 8;
+    g.pegs[7] = 2;
+    g.pegs[9] = 2;
+    g.items[g.nitems++] = ITEM_MERGER;
+    game_launch(&g, 0);
+    int sixteens = 0, eights = 0;
+    for (int i = 0; i < g.nslots; i++) {
+        sixteens += g.pegs[i] == 16;
+        eights += g.pegs[i] == 8;
+    }
+    CHECK(sixteens == 1 && eights == 0 && g.pegs[7] == 2 && g.pegs[9] == 2);
+
+    // payroll and overtime: 2 coins a restock, and one restock extra
+    game_new_run(&g, 32);
+    g.items[g.nitems++] = ITEM_PAYROLL;
+    g.items[g.nitems++] = ITEM_OVERTIME;
+    g.quota = 10;
+    g.score = 25;
+    int coins = g.coins;
+    CHECK(game_resolve(&g) == RESULT_CLEARED);
+    CHECK(g.restocks == 3 && g.coins == coins + 6);
+
+    // shield: the first miss in a round is free, the second isn't
+    game_new_run(&g, 33);
+    g.items[g.nitems++] = ITEM_SHIELD;
+    g.score = 0;
+    CHECK(game_resolve(&g) == RESULT_RETRY && g.lives == START_LIVES && g.shielded);
+    g.score = 0;
+    CHECK(game_resolve(&g) == RESULT_RETRY && g.lives == START_LIVES - 1 && !g.shielded);
+
+    // scope: a longer guide
+    CHECK(game_guide_dots(&g, 8) == 8);
+    g.items[g.nitems++] = ITEM_SCOPE;
+    CHECK(game_guide_dots(&g, 8) == 16);
+    int16_t xs[16], ys[16];
+    empty_pyramid(&g);
+    CHECK(game_predict(&g, 20, xs, ys, 16) == 16);
+
+    // late items and perks only turn up in later rounds
+    game_new_run(&g, 34);
+    for (int t = 0; t < 200; t++) {
+        game_roll_shop(&g);
+        for (int s = 0; s < SHOP_SLOTS; s++)
+            CHECK(g.shop[s] < 0 || item_info[g.shop[s]].from_round <= 1);
+        game_roll_perks(&g);
+        for (int c = 0; c < PERK_CHOICES; c++) CHECK(perk_info[g.perk_offer[c]].from_round <= 1);
+    }
+    g.round = 20;
+    int seen_late = 0;
+    for (int t = 0; t < 200; t++) {
+        game_roll_perks(&g);
+        for (int c = 0; c < PERK_CHOICES; c++) seen_late |= perk_info[g.perk_offer[c]].from_round > 1;
+    }
+    CHECK(seen_late);
+}
+
 static void test_everything_terminates(void)
 {
     // every perk and a full set of items: launches still end, scores stay sane
@@ -423,6 +486,7 @@ int main(void)
     test_shop();
     test_items();
     test_perks();
+    test_new_items();
     test_everything_terminates();
     test_bosses();
     test_aim_at();

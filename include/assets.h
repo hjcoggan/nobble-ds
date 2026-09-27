@@ -25,14 +25,14 @@
 #define TILE_WIND 64          // 16x8
 #define TILE_PAUSE 68
 #define TILE_ICON(i) (72 + (i) * 4)
-#define TILE_PERK(i) (116 + (i) * 4)
-#define TILE_BIGICON(i) (148 + (i) * 16)
-#define TILE_BIGPERK(i) (324 + (i) * 16)
-#define TILE_FACE(f) (452 + (f) * 64)   // 64x64: happy, blink, wow, worry
-#define TILE_HEART 708
-#define TILE_HEART_EMPTY 712
-#define TILE_COIN 716
-#define TILE_FREE 720        // first unused sprite tile
+#define TILE_PERK(i) (152 + (i) * 4)
+#define TILE_BIGICON(i) (212 + (i) * 16)
+#define TILE_BIGPERK(i) (532 + (i) * 16)
+#define TILE_FACE(f) (772 + (f) * 64)   // 64x64: happy, blink, wow, worry
+#define TILE_HEART 1028
+#define TILE_HEART_EMPTY 1032
+#define TILE_COIN 1036
+#define TILE_FREE 1040        // first unused sprite tile
 #define PEG_TILES 16
 #define POPUP_TILES 8
 #define NUM_POPUPS 6
@@ -48,7 +48,7 @@
 
 extern const uint16_t font_pal[16];
 extern const uint16_t obj_pal[256];
-extern const uint32_t obj_tiles[5760];
+extern const uint32_t obj_tiles[8320];
 extern const uint32_t font_tiles[2832];
 extern const uint8_t glyphs5x7[10][7];                // digit bitmaps, bit 4 = left column
 

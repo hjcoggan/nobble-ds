@@ -19,7 +19,7 @@ static const uint8_t *const boards[NUM_BOARDS] = { board0_bin, board1_bin, board
 #define PAUSE_DIM 9               // 0-16 darkening behind menus
 #define SHOP_DIM 12
 #define RESULT_FRAMES 120
-#define AIM_DOTS 12
+#define AIM_DOTS 24               // room for Scope's longer guide (12 normally)
 #define NUM_SPARKS 40
 
 // bottom screen sprites (lower ids draw on top)
@@ -75,6 +75,7 @@ static const char *const trigger_short[NUM_TRIGGERS] = {
 };
 static const char *const perk_short[NUM_PERKS] = {
     "EVERY 3 SEC", "EVERY 1 SEC", "FIRST POP", "FALLS OUT", "WALL HIT", "GOAL MET", "TOP PEG HIT", "15 POPS",
+    "ON LAUNCH", "EVERY 5 POP", "PEG GONE", "PEG GONE", "HIT 64 PLUS", "ITEM FIRES", "FALLS OUT",
 };
 
 // ---------------------------------------------------------------- input
@@ -455,7 +456,7 @@ static void board_sprites(void)
 
     if (state == ST_AIM) {
         int16_t xs[AIM_DOTS], ys[AIM_DOTS];
-        int n = game_predict(&game, aim, xs, ys, AIM_DOTS);
+        int n = game_predict(&game, aim, xs, ys, game_guide_dots(&game, AIM_DOTS / 2));
         for (int d = 0; d < n; d++)
             spr(BOT, OBJ_DOT + d, xs[d] - 4, ys[d] - 4, SpriteSize_8x8, TILE_DOT, PAL_NOBBLE, 2);
     }
@@ -821,7 +822,7 @@ static void finish_launch(void)
         text_center(BOT, 7, "MISSED!", TXT_HILITE);
         p = put_num(buf, game.lives);
         put_str(p, game.lives == 1 ? " LIFE LEFT" : " LIVES LEFT");
-        text_center(BOT, 11, buf, TXT_PANEL);
+        text_center(BOT, 11, game.shielded ? "YOUR SHIELD SAVED A LIFE" : buf, TXT_PANEL);
         text_center(BOT, 13, "THE BOARD RESETS", TXT_PANEL);
     }
     hud_text();
