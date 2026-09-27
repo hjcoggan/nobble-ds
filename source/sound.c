@@ -378,6 +378,7 @@ static void music_step(void)
 
 void sound_init(void)
 {
+    soundInit();                // connect to the sound driver on the ARM7
     soundEnable();
     soundSetMixerVolume(127);
     build_rates();
