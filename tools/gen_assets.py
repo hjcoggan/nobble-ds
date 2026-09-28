@@ -868,7 +868,7 @@ def portrait(expr):
             d = math.hypot(dx, dy)
             if d > r:
                 continue
-            lit = -(dx * LIGHT[0] + dy * LIGHT[1]) / r
+            lit = (dx * LIGHT[0] + dy * LIGHT[1]) / r      # light comes from the top left
             v = 1 if d > r - 1.6 else 2 if lit < -0.35 else 3 if lit < 0.3 else 4
             if math.hypot(dx + r * 0.42, dy + r * 0.48) < r * 0.16:
                 v = 5
@@ -1106,10 +1106,42 @@ def write_icon_bmp(path, img, pal):
         f.write(hdr + info + colours + rows)
 
 
-face = portrait("happy")
-write_icon_bmp(os.path.join(ROOT, "icon.bmp"),
-               [[face[min(63, y * 2 + 1)][x * 2 + 1] for x in range(32)] for y in range(32)],
+def icon_face():
+    """Nobble's face drawn natively at 32x32 for the DS menu (UI_PAL indices)."""
+    img = [[0] * 32 for _ in range(32)]
+    cx, cy, r = 16, 16.5, 14
+
+    def blob(px, py, rx, ry, v):
+        for y in range(32):
+            for x in range(32):
+                if ((x + 0.5 - px) / rx) ** 2 + ((y + 0.5 - py) / ry) ** 2 <= 1:
+                    img[y][x] = v
+    for y in range(32):
+        for x in range(32):
+            dx, dy = x + 0.5 - cx, y + 0.5 - cy
+            d = math.hypot(dx, dy)
+            if d > r:
+                continue
+            lit = (dx * LIGHT[0] + dy * LIGHT[1]) / r      # light comes from the top left
+            img[y][x] = 1 if d > r - 1.3 else 2 if lit < -0.35 else 3 if lit < 0.3 else 4
+    blob(cx - 6, cy - 7, 2.2, 1.6, 5)                    # shine
+    for s in (-1, 1):
+        blob(cx + s * 5, cy - 2, 2.7, 3.4, 7)            # eyes
+        blob(cx + s * 5 + 0.6, cy - 1.2, 1.5, 2, 6)
+        img[int(cy - 4)][int(cx + s * 5 - 1)] = 7
+        blob(cx + s * 9, cy + 3.5, 1.8, 1.2, 8)          # blush
+    for k in range(-4, 5):                               # smile
+        img[int(cy + 5 + (1 - (k / 4.5) ** 2) * 2.2)][int(cx + k)] = 6
+    return img
+
+
+ICON_IMG = icon_face()
+write_icon_bmp(os.path.join(ROOT, "icon.bmp"), ICON_IMG,
                [(255, 0, 255)] + [tuple(int(v) for v in c) for c in UI_PAL[1:]])
+os.makedirs(os.path.join(ROOT, "build"), exist_ok=True)
+write_png(os.path.join(ROOT, "build", "preview_icon.png"),       # 8x preview on a blue background
+          [[tuple(int(v) for v in UI_PAL[ICON_IMG[y // 8][x // 8]]) if ICON_IMG[y // 8][x // 8] else (40, 90, 200)
+            for x in range(256)] for y in range(256)])
 
 BITMAPS = {"title_top": render_title_top(), "title_bottom": render_title_bottom(), "dashboard": render_dashboard()}
 for i, t in enumerate(BOARD_THEMES):

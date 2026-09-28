@@ -18,7 +18,6 @@ BUILD    := build
 SOURCES  := source
 INCLUDES := include
 DATA     := data
-ICON     := icon.bmp
 
 ARCH := -march=armv5te -mtune=arm946e-s
 
@@ -49,7 +48,7 @@ export HFILES := $(addsuffix .h,$(subst .,_,$(BINFILES)))
 export INCLUDE  := $(foreach dir,$(INCLUDES),-iquote $(CURDIR)/$(dir)) \
                    $(foreach dir,$(LIBDIRS),-I$(dir)/include) -I$(CURDIR)/$(BUILD)
 export LIBPATHS := $(foreach dir,$(LIBDIRS),-L$(dir)/lib)
-export GAME_ICON := $(CURDIR)/$(BUILD)/$(notdir $(basename $(ICON))).grf
+export GAME_ICON := $(CURDIR)/icon.bmp   # 32x32, 16 colours; ndstool reads it directly
 
 .PHONY: $(BUILD) clean assets test
 
@@ -82,10 +81,6 @@ $(OFILES_SOURCES) : $(HFILES)
 %.bin.o %_bin.h : %.bin
 	@echo $(notdir $<)
 	@$(bin2o)
-
-$(GAME_ICON): $(CURDIR)/../$(ICON)
-	@echo convert $(notdir $<)
-	@grit $< -g -gt -gB4 -gT FF00FF -m! -p -pe 16 -fh! -ftr -o$@
 
 -include $(DEPSDIR)/*.d
 
